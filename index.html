@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>jemPOS Chef: punto de venta y contabilidad para restaurantes</title>
+  <meta name="description" content="Mesas, comandas, cocina, propinas y contabilidad en la nube para tu restaurante. Desde el celular, sin equipos costosos." />
+  <meta name="theme-color" content="#c2410c" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" />
+  <link rel="stylesheet" href="css/landing.css" />
+  <script>document.documentElement.classList.add('js')</script>
+  <script src="js/landing.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
+
+  <!-- Sprite de iconos (mismo patron que jemPOS: <use href="#i-..."/>) -->
+  <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-chef" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14a4 4 0 0 1-1-7.9A5 5 0 0 1 12 3a5 5 0 0 1 7 3.1A4 4 0 0 1 18 14v6H6z"/><path d="M6 17h12"/></symbol>
+    <symbol id="i-mesa" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18"/><path d="M5 9v10M19 9v10M9 9v6M15 9v6"/><path d="M4 5h16"/></symbol>
+    <symbol id="i-comanda" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></symbol>
+    <symbol id="i-cocina" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="M7 9h5M7 12h8"/></symbol>
+    <symbol id="i-propina" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5c0-1 1-1.7 2.5-1.7s2.5.7 2.5 1.7-1 1.5-2.5 2-2.5 1-2.5 2 1 1.7 2.5 1.7 2.5-.7 2.5-1.7"/></symbol>
+    <symbol id="i-dividir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><rect x="3" y="6" width="18" height="12" rx="2"/></symbol>
+    <symbol id="i-receta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M8 7h7M8 11h5"/></symbol>
+    <symbol id="i-caja" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></symbol>
+    <symbol id="i-regalo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v9h14v-9M8 8a2.5 2.5 0 1 1 4-2 2.5 2.5 0 1 1 4 2"/></symbol>
+    <symbol id="i-flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  </svg>
+
+  <header class="header" data-header>
+    <nav class="header__nav" aria-label="Principal">
+      <a class="header__brand" href="#" aria-label="jemPOS Chef, inicio">
+        <span class="header__brand-mark"><svg class="ico" aria-hidden="true"><use href="#i-chef"/></svg></span>
+        <span>jemPOS <span class="header__brand-chef">Chef</span></span>
+      </a>
+
+      <div class="header__menu" id="menu-principal" data-nav-menu>
+        <a class="header__link" href="#ventajas">Ventajas</a>
+        <a class="header__link" href="#como-funciona">Cómo funciona</a>
+        <a class="header__link" href="#cocina">Cocina</a>
+        <a class="header__link" href="#planes">Planes</a>
+        <a class="header__link" href="#faq">Preguntas</a>
+      </div>
+
+      <a class="btn btn--primary btn--sm header__cta" href="#planes"><svg class="ico" aria-hidden="true"><use href="#i-regalo"/></svg> 1er mes gratis</a>
+
+      <button class="header__toggle" type="button" aria-expanded="false" aria-controls="menu-principal" data-nav-toggle>
+        <span class="header__toggle-bar" aria-hidden="true"></span>
+        <span class="visually-hidden">Abrir menú</span>
+      </button>
+    </nav>
+  </header>
+
+  <main id="contenido">
+
+    <!-- HERO: propuesta de valor + maqueta del salón -->
+    <section class="hero" aria-labelledby="hero-titulo">
+      <div class="hero__inner">
+        <div class="hero__copy">
+          <p class="pill"><svg class="ico" aria-hidden="true"><use href="#i-chef"/></svg> Para restaurantes, cafés y comidas rápidas</p>
+          <h1 class="hero__title" id="hero-titulo">
+            Tus mesas, tu cocina y tu caja, <span class="hero__acento">en orden desde el celular</span>
+          </h1>
+          <p class="hero__subtitle">
+            Toma el pedido en la mesa, mándalo a cocina al instante y cobra con propina
+            y cuenta dividida. El inventario se descuenta por receta y la caja cuadra al peso.
+          </p>
+          <div class="hero__actions">
+            <a class="btn btn--primary btn--lg btn--brillo" href="#planes"><svg class="ico" aria-hidden="true"><use href="#i-regalo"/></svg> Empieza con 1 mes gratis</a>
+            <a class="btn btn--ghost btn--lg" href="#como-funciona">Ver cómo funciona <svg class="ico" aria-hidden="true"><use href="#i-flecha"/></svg></a>
+          </div>
+          <ul class="hero__chips" role="list">
+            <li class="chip">Funciona en cualquier celular</li>
+            <li class="chip">Sin equipos costosos</li>
+            <li class="chip">Soporte por WhatsApp</li>
+          </ul>
+        </div>
+
+        <div class="hero__visual" aria-hidden="true">
+          <div class="app-mock">
+            <div class="app-mock__head">
+              <span class="app-mock__titulo">Salón principal</span>
+              <span class="app-mock__estado">Caja abierta</span>
+            </div>
+            <div class="mesas">
+              <div class="mesa mesa--libre"><strong>1</strong>Libre</div>
+              <div class="mesa mesa--ocupada"><strong>2</strong>Comiendo</div>
+              <div class="mesa mesa--libre"><strong>3</strong>Libre</div>
+              <div class="mesa mesa--ocupada mesa--activa" data-mesa-viva><strong>4</strong><span data-mesa-estado>Comiendo</span></div>
+              <div class="mesa mesa--cuenta"><strong>5</strong>Cuenta</div>
+              <div class="mesa mesa--ocupada"><strong>6</strong>Comiendo</div>
+              <div class="mesa mesa--libre"><strong>7</strong>Libre</div>
+              <div class="mesa mesa--ocupada"><strong>8</strong>Pedido</div>
+            </div>
+            <div class="comanda">
+              <span class="comanda__titulo">Mesa 4 · 3 personas</span>
+              <div class="comanda__item"><span>2 × Bandeja paisa</span><span>$64.000</span></div>
+              <div class="comanda__item"><span>1 × Sopa del día</span><span>$14.000</span></div>
+              <div class="comanda__item"><span>3 × Limonada</span><span>$21.000</span></div>
+            </div>
+            <div class="app-mock__cobro">
+              <span class="app-mock__cobro-label">Total con propina</span>
+              <span class="app-mock__cobro-monto">$108.900</span>
+            </div>
+            <span class="app-mock__btn">Cobrar mesa 4</span>
+
+            <span class="flota flota--cocina"><svg class="ico" aria-hidden="true"><use href="#i-cocina"/></svg> Cocina: pedido recibido</span>
+            <span class="flota flota--propina"><svg class="ico" aria-hidden="true"><use href="#i-propina"/></svg> Propina sugerida 10%</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VENTAJAS -->
+    <section class="seccion" id="ventajas" aria-labelledby="ventajas-titulo">
+      <div class="seccion__head reveal">
+        <p class="seccion__eyebrow">Hecho para el servicio</p>
+        <h2 class="seccion__titulo" id="ventajas-titulo">Deja de gritar pedidos y de cuadrar la caja a mano</h2>
+        <p class="seccion__texto">Todo lo que pasa entre la mesa y la caja, en un solo lugar.</p>
+      </div>
+
+      <div class="ventajas" data-reveal-grupo>
+        <article class="card ventaja reveal">
+          <span class="ventaja__icono"><svg class="ico" aria-hidden="true"><use href="#i-mesa"/></svg></span>
+          <span class="ventaja__badge">Menos errores</span>
+          <h3 class="ventaja__titulo">Mesas y cuentas abiertas</h3>
+          <p class="ventaja__texto">Cada mesa tiene su cuenta. Suma pedidos durante todo el servicio y cobra al final, sin papelitos.</p>
+        </article>
+        <article class="card ventaja reveal">
+          <span class="ventaja__icono"><svg class="ico" aria-hidden="true"><use href="#i-cocina"/></svg></span>
+          <span class="ventaja__badge">Más rápido</span>
+          <h3 class="ventaja__titulo">Comandas directo a cocina</h3>
+          <p class="ventaja__texto">El pedido sale en la pantalla de cocina al enviarlo. Con tiempos por plato para que nada se enfríe.</p>
+        </article>
+        <article class="card ventaja reveal">
+          <span class="ventaja__icono"><svg class="ico" aria-hidden="true"><use href="#i-propina"/></svg></span>
+          <span class="ventaja__badge">Equipo contento</span>
+          <h3 class="ventaja__titulo">Propinas claras</h3>
+          <p class="ventaja__texto">La propina se cobra aparte de la venta y se reparte sin discusiones. El cuadre de caja la muestra por separado.</p>
+        </article>
+        <article class="card ventaja reveal">
+          <span class="ventaja__icono"><svg class="ico" aria-hidden="true"><use href="#i-dividir"/></svg></span>
+          <span class="ventaja__badge">Cobro ágil</span>
+          <h3 class="ventaja__titulo">Cuenta dividida</h3>
+          <p class="ventaja__texto">Divide por persona o por plato y mezcla efectivo, tarjeta y transferencia en la misma mesa.</p>
+        </article>
+        <article class="card ventaja reveal">
+          <span class="ventaja__icono"><svg class="ico" aria-hidden="true"><use href="#i-receta"/></svg></span>
+          <span class="ventaja__badge ventaja__badge--ahorro">Ahorra en insumos</span>
+          <h3 class="ventaja__titulo">Recetas e inventario de ingredientes</h3>
+          <p class="ventaja__texto">Cada plato descuenta sus ingredientes. Sabes el costo real de cada receta y qué pedir al proveedor hoy.</p>
+        </article>
+        <article class="card ventaja reveal">
+          <span class="ventaja__icono"><svg class="ico" aria-hidden="true"><use href="#i-caja"/></svg></span>
+          <span class="ventaja__badge ventaja__badge--ahorro">Contabilidad al día</span>
+          <h3 class="ventaja__titulo">Caja, gastos y utilidad</h3>
+          <p class="ventaja__texto">Turnos con cuadre, gastos, cuentas por pagar y ganancia del día, del mes y por plato.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- CÓMO FUNCIONA -->
+    <section class="seccion seccion--suave" id="como-funciona" aria-labelledby="flujo-titulo">
+      <div class="seccion__head reveal">
+        <p class="seccion__eyebrow">El recorrido de una mesa</p>
+        <h2 class="seccion__titulo" id="flujo-titulo">De «buenas noches» a «gracias por venir» en cuatro pasos</h2>
+      </div>
+      <ol class="flujo" role="list" data-reveal-grupo>
+        <li class="card etapa reveal">
+          <span class="etapa__num">1</span>
+          <h3 class="etapa__titulo">Abre la mesa</h3>
+          <p>Toca la mesa libre, indica cuántas personas son y empieza la cuenta.</p>
+        </li>
+        <li class="card etapa reveal">
+          <span class="etapa__num">2</span>
+          <h3 class="etapa__titulo">Toma el pedido</h3>
+          <p>Elige los platos, añade notas («sin cebolla») y envía la comanda.</p>
+        </li>
+        <li class="card etapa reveal">
+          <span class="etapa__num">3</span>
+          <h3 class="etapa__titulo">Cocina prepara</h3>
+          <p>El tiquete aparece en cocina. Al marcarlo listo, avisa al mesero.</p>
+        </li>
+        <li class="card etapa reveal">
+          <span class="etapa__num">4</span>
+          <h3 class="etapa__titulo">Cobra y cierra</h3>
+          <p>Propina, cuenta dividida, factura y la mesa queda libre al instante.</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- COCINA -->
+    <section class="seccion" id="cocina" aria-labelledby="cocina-titulo">
+      <div class="cocina">
+        <div class="reveal">
+          <p class="seccion__eyebrow">Pantalla de cocina</p>
+          <h2 class="seccion__titulo" id="cocina-titulo">La cocina ve lo que el salón pide, sin que nadie grite</h2>
+          <ul class="cocina__lista" role="list">
+            <li><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg> Tiquetes por estación: parrilla, fríos, bebidas.</li>
+            <li><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg> Cronómetro por pedido y alerta cuando se demora.</li>
+            <li><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg> Funciona en una tablet o en cualquier pantalla con navegador.</li>
+          </ul>
+        </div>
+
+        <div class="kds reveal" aria-hidden="true">
+          <div class="kds__head"><span>Cocina</span><span>3 pedidos activos</span></div>
+          <div class="tiquete tiquete--tarde">
+            <div class="tiquete__top"><span>Mesa 2</span><span>14:20</span></div>
+            <p>1 × Bandeja paisa · 1 × Ajiaco</p>
+          </div>
+          <div class="tiquete">
+            <div class="tiquete__top"><span>Mesa 4</span><span>06:45</span></div>
+            <p>2 × Bandeja paisa · 1 × Sopa del día<br>Nota: sin cebolla</p>
+          </div>
+          <div class="tiquete tiquete--listo">
+            <div class="tiquete__top"><span>Mesa 8</span><span>Listo</span></div>
+            <p>2 × Jugo natural</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CIFRAS (ilustrativas hasta tener datos reales) -->
+    <section class="seccion seccion--suave" aria-labelledby="cifras-titulo">
+      <div class="seccion__head reveal">
+        <p class="seccion__eyebrow">Lo que cambia en tu restaurante</p>
+        <h2 class="seccion__titulo" id="cifras-titulo">Menos tiempo en papeles, más tiempo en el servicio</h2>
+      </div>
+      <div class="cifras" data-reveal-grupo>
+        <div class="card cifra reveal"><span class="cifra__valor" data-contar="30" data-sufijo=" seg">30 seg</span><span class="cifra__texto">de la mesa a la pantalla de cocina</span></div>
+        <div class="card cifra reveal"><span class="cifra__valor" data-contar="0" >$0</span><span class="cifra__texto">en equipos: usa tu celular o tablet</span></div>
+        <div class="card cifra reveal"><span class="cifra__valor" data-contar="100" data-sufijo="%">100%</span><span class="cifra__texto">de las propinas registradas</span></div>
+        <div class="card cifra reveal"><span class="cifra__valor" data-contar="1" data-sufijo=" mes">1 mes</span><span class="cifra__texto">gratis para probarlo en tu operación</span></div>
+      </div>
+      <p class="nota-cifras">Cifras de referencia del diseño, por validar con restaurantes piloto.</p>
+    </section>
+
+    <!-- PLANES (borrador: precios por definir) -->
+    <section class="seccion" id="planes" aria-labelledby="planes-titulo">
+      <div class="seccion__head reveal">
+        <p class="seccion__eyebrow">Planes</p>
+        <h2 class="seccion__titulo" id="planes-titulo">Elige el plan de tu restaurante</h2>
+        <p class="seccion__texto">Empieza con 1 mes gratis. Sin contrato y sin equipos.</p>
+      </div>
+      <div class="precios" data-reveal-grupo>
+        <article class="card plan reveal">
+          <h3 class="plan__nombre">Esencial</h3>
+          <p class="plan__desc">Para cafés y locales pequeños.</p>
+          <p class="plan__precio">Por definir<small>COP / mes</small></p>
+          <ul class="plan__lista" role="list">
+            <li>Mesas y cuentas abiertas</li>
+            <li>Cobro con propina</li>
+            <li>Caja y turnos</li>
+          </ul>
+          <a class="btn btn--ghost btn--block" href="#contacto">Quiero este plan</a>
+        </article>
+        <article class="card plan plan--destacado reveal">
+          <span class="plan__tag">El más elegido</span>
+          <h3 class="plan__nombre">Servicio completo</h3>
+          <p class="plan__desc">Salón y cocina conectados.</p>
+          <p class="plan__precio">Por definir<small>COP / mes</small></p>
+          <ul class="plan__lista" role="list">
+            <li>Todo lo de Esencial</li>
+            <li>Pantalla de cocina</li>
+            <li>Cuenta dividida</li>
+            <li>Recetas e inventario de ingredientes</li>
+          </ul>
+          <a class="btn btn--primary btn--brillo btn--block" href="#contacto">Quiero este plan</a>
+        </article>
+        <article class="card plan reveal">
+          <h3 class="plan__nombre">Cadena</h3>
+          <p class="plan__desc">Varias sedes y factura electrónica.</p>
+          <p class="plan__precio">Por definir<small>COP / mes</small></p>
+          <ul class="plan__lista" role="list">
+            <li>Todo lo de Servicio completo</li>
+            <li>Varias sedes</li>
+            <li>Factura electrónica DIAN</li>
+          </ul>
+          <a class="btn btn--ghost btn--block" href="#contacto">Quiero este plan</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="seccion seccion--suave" id="faq" aria-labelledby="faq-titulo">
+      <div class="seccion__head reveal">
+        <h2 class="seccion__titulo" id="faq-titulo">Preguntas frecuentes</h2>
+      </div>
+      <div class="faq" data-reveal-grupo>
+        <details class="card reveal"><summary>¿Necesito comprar equipos?</summary><p>No. Funciona en el celular o la tablet que ya tienes. Para cocina basta cualquier pantalla con navegador.</p></details>
+        <details class="card reveal"><summary>¿Sirve si me quedo sin internet?</summary><p>Por definir en el diseño: es una de las preguntas que queremos resolver con restaurantes piloto antes de lanzar.</p></details>
+        <details class="card reveal"><summary>¿Puedo dividir una cuenta entre varias personas?</summary><p>Sí. Por persona o por plato, y con varios medios de pago en la misma mesa.</p></details>
+        <details class="card reveal"><summary>¿Qué pasa con las propinas?</summary><p>Se cobran aparte de la venta y quedan registradas por turno y por mesero, para repartirlas sin discusiones.</p></details>
+        <details class="card reveal"><summary>¿Es lo mismo que jemPOS?</summary><p>Es la versión de jemPOS pensada para restaurantes: conserva caja, inventario y contabilidad, y añade mesas, comandas, cocina y recetas.</p></details>
+      </div>
+    </section>
+
+    <!-- CTA FINAL -->
+    <section class="cta-final reveal" id="contacto" aria-labelledby="cta-titulo">
+      <div class="cta-final__card">
+        <h2 class="cta-final__title" id="cta-titulo">Que tu próximo servicio sea el más ordenado</h2>
+        <p class="cta-final__text">Pruébalo un mes gratis en tu restaurante. Te ayudamos a cargar tu carta y tus mesas.</p>
+        <div class="cta-final__acciones">
+          <a class="btn btn--inverse btn--lg btn--pulso" href="#planes"><svg class="ico" aria-hidden="true"><use href="#i-regalo"/></svg> Empieza con 1 mes gratis</a>
+          <a class="btn btn--sobre-oscuro btn--lg" href="#como-funciona">Ver cómo funciona</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>© jemPOS Chef · Una versión de <a href="https://github.com/jempo2002/jemPOS">jemPOS</a> para restaurantes.</p>
+  </footer>
+</body>
+</html>
