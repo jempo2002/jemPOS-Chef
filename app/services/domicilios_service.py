@@ -12,7 +12,8 @@ Ciclo de un domicilio (pedido_domicilios.estado):
                  en ese momento), y el domicilio sale del panel.
 
 Lo que un domiciliario debe entregar al regresar es la suma de sus domicilios
-despachados o entregados, sin liquidar, sin cobrar y con metodo 'Efectivo'.
+despachados o entregados, sin liquidar y sin cobrar, con metodo 'Efectivo'
+(todo el domicilio) o 'Mixto' (solo su parte en efectivo).
 Se calcula en cada consulta desde los platos del pedido (nada guardado que se
 pueda desfasar si un Admin anula un plato en el camino). El indice
 (id_sede, estado, id_domiciliario) deja fuera lo ya liquidado, asi que el
@@ -58,6 +59,7 @@ METODOS = {
     "nequi": "Nequi/Daviplata",
     "transferencia": "Nequi/Daviplata",
     "tarjeta": "Tarjeta",
+    "mixto": "Mixto",
 }
 EN_CALLE = ("despachado", "entregado")
 _SIN_COBRAR = ("abierto", "por_cobrar")
@@ -72,6 +74,24 @@ def _metodo(valor) -> str:
 
 def _monto(valor, etiqueta: str) -> Decimal:
     return _pesos(parse_float(valor, etiqueta, min_value=0, max_value=MONTO_MAX))
+
+
+def _efectivo_mixto(data: dict, total: Decimal) -> Decimal:
+    """En Mixto, cuanto paga el cliente en efectivo: mas de 0 y menos que el
+    total (el resto va por transferencia)."""
+    efectivo = _monto(data.get("monto_efectivo"), "El efectivo")
+    if not 0 < efectivo < total:
+        raise ValueError(f"En Mixto, el efectivo debe estar entre $1 y ${int(total) - 1:,}.".replace(",", "."))
+    return efectivo
+
+
+def _efectivo_de(metodo: str, cobrar: Decimal, monto_efectivo) -> Decimal:
+    """Lo que el domiciliario recibe en billetes de un domicilio."""
+    if metodo == "Efectivo":
+        return cobrar
+    if metodo == "Mixto" and cobrar:
+        return min(Decimal(monto_efectivo or 0), cobrar)
+    return Decimal(0)
 
 
 # --- domiciliarios ----------------------------------------------------------
@@ -191,7 +211,8 @@ def _domiciliario_activo(cur, id_sede: int, id_domiciliario) -> dict:
 # Siempre filtra por sede y estado: entra por idx_pedido_domicilios_recaudo.
 _DOMICILIOS = (
     "SELECT d.id_pedido, p.uuid_cliente AS uuid, p.numero_llevar AS numero, p.cliente_nombre AS cliente, "
-    "p.cliente_telefono AS telefono, p.estado AS estado_pedido, d.direccion, d.estado, d.metodo_pago, d.paga_con, "
+    "p.cliente_telefono AS telefono, p.estado AS estado_pedido, d.direccion, d.estado, d.metodo_pago, "
+    "d.monto_efectivo, d.paga_con, "
     "d.id_domiciliario, m.nombre AS domiciliario, d.despachado_en, "
     "TIMESTAMPDIFF(MINUTE, p.abierto_en, NOW()) AS minutos, "
     "TIMESTAMPDIFF(MINUTE, d.despachado_en, NOW()) AS minutos_en_calle, "
@@ -211,6 +232,7 @@ def _json_domicilio(f: dict) -> dict:
     pagado = f["estado_pedido"] not in _SIN_COBRAR
     cobrar = 0.0 if pagado else total
     paga_con = float(f["paga_con"]) if f["paga_con"] is not None else None
+    efectivo = float(_efectivo_de(f["metodo_pago"], Decimal(str(cobrar)), f["monto_efectivo"]))
     return {
         "id_pedido": f["id_pedido"],
         "uuid": f["uuid"],
@@ -223,9 +245,10 @@ def _json_domicilio(f: dict) -> dict:
         "pagado": pagado,
         "total": total,
         "cobrar": cobrar,
-        "efectivo": cobrar if f["metodo_pago"] == "Efectivo" else 0.0,
+        "efectivo": efectivo,
+        "transferencia": cobrar - efectivo,
         "paga_con": paga_con,
-        "vuelto": max(0.0, paga_con - cobrar) if paga_con and f["metodo_pago"] == "Efectivo" and not pagado else 0.0,
+        "vuelto": max(0.0, paga_con - efectivo) if paga_con and efectivo else 0.0,
         "id_domiciliario": f["id_domiciliario"],
         "domiciliario": f["domiciliario"],
         "despachado_a_las": f["despachado_en"].strftime("%H:%M") if f["despachado_en"] else None,
@@ -262,19 +285,21 @@ def listar(id_sede: int) -> dict:
 
 def efectivo_por_entregar(cur, id_sede: int, id_domiciliario: int) -> dict:
     """Lo que un domiciliario debe entregar en efectivo ahora mismo y cuantos
-    domicilios lleva. Solo cuenta lo despachado/entregado sin liquidar, sin
-    cobrar y en 'Efectivo'."""
+    domicilios lleva. Solo cuenta lo despachado/entregado sin liquidar y sin
+    cobrar: en 'Efectivo' todo el domicilio, en 'Mixto' su parte en efectivo."""
     cur.execute(
-        "SELECT COUNT(DISTINCT d.id_pedido) AS pedidos, COALESCE(SUM(ROUND(i.cantidad * i.precio_unitario)), 0) AS efectivo "
+        "SELECT d.metodo_pago, d.monto_efectivo, COALESCE(SUM(ROUND(i.cantidad * i.precio_unitario)), 0) AS total "
         "FROM pedido_domicilios d "
         "JOIN pedidos p ON p.id_pedido = d.id_pedido "
-        "JOIN pedido_items i ON i.id_pedido = d.id_pedido AND i.estado <> 'anulado' "
+        "LEFT JOIN pedido_items i ON i.id_pedido = d.id_pedido AND i.estado <> 'anulado' "
         "WHERE d.id_sede = %s AND d.estado IN ('despachado', 'entregado') AND d.id_domiciliario = %s "
-        "AND d.metodo_pago = 'Efectivo' AND p.estado IN ('abierto', 'por_cobrar')",
+        "AND d.metodo_pago IN ('Efectivo', 'Mixto') AND p.estado IN ('abierto', 'por_cobrar') "
+        "GROUP BY d.id_pedido",
         (id_sede, id_domiciliario),
     )
-    fila = cur.fetchone()
-    return {"pedidos": int(fila["pedidos"]), "efectivo": float(fila["efectivo"])}
+    filas = cur.fetchall()
+    efectivo = sum((_efectivo_de(f["metodo_pago"], Decimal(f["total"]), f["monto_efectivo"]) for f in filas), Decimal(0))
+    return {"pedidos": len(filas), "efectivo": float(efectivo)}
 
 
 def recaudo(id_tienda: int, id_sede: int) -> dict:
@@ -314,7 +339,7 @@ def recaudo(id_tienda: int, id_sede: int) -> dict:
         t["en_camino"] = sum(1 for d in doms if d["estado"] == "despachado")
         t["entregados"] = sum(1 for d in doms if d["estado"] == "entregado")
         t["efectivo"] = sum(d["efectivo"] for d in doms)
-        t["otros_medios"] = sum(d["cobrar"] for d in doms if d["metodo_pago"] != "Efectivo")
+        t["otros_medios"] = sum(d["transferencia"] for d in doms)
         t["alerta"] = bool(tope) and t["efectivo"] >= tope
     lista = sorted(tarjetas.values(), key=lambda t: (-len(t["domicilios"]), t["nombre"] or ""))
     return {
@@ -363,16 +388,20 @@ def despachar(id_tienda: int, id_sede: int, id_usuario: int, id_pedido: int, dat
         total = sum((_pesos(Decimal(l["cantidad"]) * Decimal(l["precio_unitario"])) for l in lineas), Decimal(0))
         pagado = pedido["estado"] not in _SIN_COBRAR
         metodo = dom["metodo_pago"] if pagado or data.get("metodo") in (None, "") else _metodo(data.get("metodo"))
+        monto_efectivo = _efectivo_mixto(data, total) if not pagado and metodo == "Mixto" else None
+        cobrar = Decimal(0) if pagado else total
+        en_billetes = _efectivo_de(metodo, cobrar, monto_efectivo)
         paga_con = None
-        if not pagado and metodo == "Efectivo" and data.get("paga_con") not in (None, "", 0, "0"):
+        if en_billetes and data.get("paga_con") not in (None, "", 0, "0"):
             paga_con = _monto(data.get("paga_con"), "Con cuánto paga")
-            if paga_con < total:
-                raise ValueError(f"Con cuánto paga debe ser al menos ${int(total):,}.".replace(",", "."))
+            if paga_con < en_billetes:
+                raise ValueError(f"Con cuánto paga debe ser al menos ${int(en_billetes):,}.".replace(",", "."))
         ahora = ahora_local()
         cur.execute(
-            "UPDATE pedido_domicilios SET estado = 'despachado', id_domiciliario = %s, metodo_pago = %s, paga_con = %s, "
-            "despachado_en = COALESCE(despachado_en, %s), id_usuario_despacha = %s WHERE id_pedido = %s",
-            (domiciliario["id_domiciliario"], metodo, paga_con, ahora, id_usuario, id_pedido),
+            "UPDATE pedido_domicilios SET estado = 'despachado', id_domiciliario = %s, metodo_pago = %s, "
+            "monto_efectivo = %s, paga_con = %s, despachado_en = COALESCE(despachado_en, %s), id_usuario_despacha = %s "
+            "WHERE id_pedido = %s",
+            (domiciliario["id_domiciliario"], metodo, monto_efectivo, paga_con, ahora, id_usuario, id_pedido),
         )
         # Ya salio de la cocina: sus comandas se cierran (como al entregar un para llevar).
         cur.execute("UPDATE comandas SET estado = 'entregada' WHERE id_pedido = %s AND estado <> 'entregada'", (id_pedido,))
@@ -389,7 +418,6 @@ def despachar(id_tienda: int, id_sede: int, id_usuario: int, id_pedido: int, dat
         raise
     finally:
         conn.close()
-    cobrar = Decimal(0) if pagado else total
     return {
         "numero": pedido["numero_llevar"],
         "cliente": pedido["cliente_nombre"],
@@ -402,8 +430,10 @@ def despachar(id_tienda: int, id_sede: int, id_usuario: int, id_pedido: int, dat
         "pagado": pagado,
         "metodo_pago": metodo,
         "cobrar": float(cobrar),
+        "efectivo": float(en_billetes),
+        "transferencia": float(cobrar - en_billetes),
         "paga_con": float(paga_con) if paga_con is not None else None,
-        "vuelto": float(paga_con - cobrar) if paga_con is not None else 0.0,
+        "vuelto": float(paga_con - en_billetes) if paga_con is not None else 0.0,
     }
 
 
@@ -467,14 +497,20 @@ def cambiar_metodo(id_tienda: int, id_sede: int, id_usuario: int, id_pedido: int
             raise Conflicto("Este domicilio ya se liquidó.")
         if pedido["estado"] not in _SIN_COBRAR:
             raise Conflicto("Este domicilio ya está pagado.")
-        if metodo != dom["metodo_pago"]:
+        monto_efectivo = None
+        if metodo == "Mixto":
+            lineas = [l for l in _lineas(cur, id_pedido) if l["estado"] != "anulado"]
+            total = sum((_pesos(Decimal(l["cantidad"]) * Decimal(l["precio_unitario"])) for l in lineas), Decimal(0))
+            monto_efectivo = _efectivo_mixto(data, total)
+        if metodo != dom["metodo_pago"] or monto_efectivo != dom["monto_efectivo"]:
             cur.execute(
-                "UPDATE pedido_domicilios SET metodo_pago = %s, paga_con = IF(%s = 'Efectivo', paga_con, NULL) "
-                "WHERE id_pedido = %s",
-                (metodo, metodo, id_pedido),
+                "UPDATE pedido_domicilios SET metodo_pago = %s, monto_efectivo = %s, "
+                "paga_con = IF(%s = 'Efectivo', paga_con, NULL) WHERE id_pedido = %s",
+                (metodo, monto_efectivo, metodo, id_pedido),
             )
+            detalle = f" (efectivo ${int(monto_efectivo):,})".replace(",", ".") if monto_efectivo else ""
             _auditoria(cur, id_tienda, id_usuario, "domicilio_metodo",
-                       f"Domicilio #{pedido['numero_llevar']}: {dom['metodo_pago']} -> {metodo}")
+                       f"Domicilio #{pedido['numero_llevar']}: {dom['metodo_pago']} -> {metodo}{detalle}")
         efectivo = efectivo_por_entregar(cur, id_sede, dom["id_domiciliario"]) if dom["id_domiciliario"] else None
         conn.commit()
     except Exception:
@@ -517,7 +553,7 @@ def liquidar(id_tienda: int, id_sede: int, id_usuario: int, data: dict) -> dict:
         )
         pedidos = {p["id_pedido"]: p for p in cur.fetchall()}
         cur.execute(
-            f"SELECT d.id_pedido, d.estado, d.metodo_pago, d.id_domiciliario, m.nombre AS domiciliario "
+            f"SELECT d.id_pedido, d.estado, d.metodo_pago, d.monto_efectivo, d.id_domiciliario, m.nombre AS domiciliario "
             f"FROM pedido_domicilios d LEFT JOIN domiciliarios m ON m.id_domiciliario = d.id_domiciliario "
             f"WHERE d.id_sede = %s AND d.id_pedido IN ({marcadores}) ORDER BY d.id_pedido FOR UPDATE",
             (id_sede, *ids),
@@ -537,9 +573,12 @@ def liquidar(id_tienda: int, id_sede: int, id_usuario: int, data: dict) -> dict:
             if not lineas:
                 raise Conflicto(f"El domicilio #{pedidos[i]['numero_llevar']} no tiene productos. Anúlalo o regrésalo.")
             total = sum((_pesos(Decimal(l["cantidad"]) * Decimal(l["precio_unitario"])) for l in lineas), Decimal(0))
-            if doms[i]["metodo_pago"] == "Efectivo":
-                efectivo += total
-            por_cobrar.append((i, lineas))
+            en_billetes = _efectivo_de(doms[i]["metodo_pago"], total, doms[i]["monto_efectivo"])
+            if doms[i]["metodo_pago"] == "Mixto" and en_billetes >= total:
+                # Anularon platos en el camino y el efectivo ya cubre todo.
+                raise Conflicto(f"El domicilio #{pedidos[i]['numero_llevar']} bajó de valor: corrige su pago Mixto.")
+            efectivo += en_billetes
+            por_cobrar.append((i, lineas, total, en_billetes))
         if efectivo != esperado:
             raise Conflicto(
                 f"El efectivo a recibir cambió: ahora son ${int(efectivo):,}. Revisa antes de confirmar.".replace(",", ".")
@@ -550,18 +589,19 @@ def liquidar(id_tienda: int, id_sede: int, id_usuario: int, data: dict) -> dict:
         ahora = ahora_local()
         nombre = doms[ids[0]]["domiciliario"]
         ventas = []
-        for i, lineas in por_cobrar:
+        for i, lineas, total, en_billetes in por_cobrar:
             pedido = pedidos[i]
             metodo = doms[i]["metodo_pago"]
+            mixto = (en_billetes, total - en_billetes) if metodo == "Mixto" else (None, None)
             venta = _registrar_venta(
                 cur, id_tienda, id_sede, id_usuario, turno, pedido,
                 [(l["id_producto"], l["cantidad"], l["precio_unitario"]) for l in lineas],
-                Decimal(0), metodo, None, None, None, f"Domicilio #{pedido['numero_llevar']} · {nombre}",
+                Decimal(0), metodo, *mixto, None, f"Domicilio #{pedido['numero_llevar']} · {nombre}",
             )
             _cerrar_pedido(cur, id_usuario, pedido)
             cur.execute(
                 "UPDATE pedido_domicilios SET id_venta = %s, efectivo_recibido = %s WHERE id_pedido = %s",
-                (venta["id_venta"], venta["total"] if metodo == "Efectivo" else 0, i),
+                (venta["id_venta"], en_billetes, i),
             )
             ventas.append(venta["numero_venta"])
         cur.execute(

@@ -149,3 +149,27 @@ def test_otra_sede_no_ve_ni_toca_los_domicilios(salon, crear, app):
     assert cliente.post(f"/api/domicilios/{id_pedido}/despachar", json={"id_domiciliario": pedro}).status_code == 404
     assert cliente.get("/api/domicilios").get_json()["domicilios"] == []
     assert cliente.post(f"/api/domicilios/{id_pedido}/metodo", json={"metodo": "nequi"}).status_code == 404
+
+
+def test_mixto_solo_suma_la_parte_en_efectivo(salon, crear):
+    salon.cajero.post("/api/caja/abrir", json={"monto_inicial": 0})
+    pedro = _rider(salon)
+    _, id_pedido = _domicilio(salon.mesero, (salon.burger, 2))  # 36.000
+    r = salon.mesero.post(f"/api/domicilios/{id_pedido}/despachar",
+                          json={"id_domiciliario": pedro, "metodo": "mixto", "monto_efectivo": 36000})
+    assert r.status_code == 400  # todo en efectivo no es Mixto
+    r = salon.mesero.post(f"/api/domicilios/{id_pedido}/despachar",
+                          json={"id_domiciliario": pedro, "metodo": "mixto", "monto_efectivo": 20000, "paga_con": 50000})
+    ticket = r.get_json()["ticket"]
+    assert ticket["efectivo"] == 20000 and ticket["transferencia"] == 16000 and ticket["vuelto"] == 30000
+    t = _tarjeta(salon, pedro)
+    assert t["efectivo"] == 20000 and t["otros_medios"] == 16000
+
+    r = salon.cajero.post(f"/api/domicilios/{id_pedido}/metodo", json={"metodo": "mixto", "monto_efectivo": 10000})
+    assert r.get_json()["domiciliario"]["efectivo"] == 10000
+    r = salon.cajero.post("/api/domicilios/recaudo", json={"id_domiciliario": pedro, "pedidos": [id_pedido], "efectivo": 10000})
+    assert r.status_code == 200, r.get_json()
+    venta = crear.fila("SELECT metodo_pago, monto_efectivo, monto_transferencia FROM ventas")
+    assert venta["metodo_pago"] == "Mixto" and float(venta["monto_efectivo"]) == 10000
+    assert float(venta["monto_transferencia"]) == 26000
+    assert salon.cajero.get("/api/caja").get_json()["turno"]["esperado_en_caja"] == 10000

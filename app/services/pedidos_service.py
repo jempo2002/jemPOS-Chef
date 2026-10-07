@@ -134,7 +134,7 @@ def _pedido_llevar(cur, id_sede: int, uuid: str, bloquear: bool = True) -> dict 
 
 def fila_domicilio(cur, id_pedido: int, bloquear: bool = False) -> dict | None:
     cur.execute(
-        "SELECT d.id_pedido, d.direccion, d.estado, d.metodo_pago, d.paga_con, d.id_domiciliario, "
+        "SELECT d.id_pedido, d.direccion, d.estado, d.metodo_pago, d.monto_efectivo, d.paga_con, d.id_domiciliario, "
         "m.nombre AS domiciliario, d.despachado_en, d.id_venta "
         "FROM pedido_domicilios d LEFT JOIN domiciliarios m ON m.id_domiciliario = d.id_domiciliario "
         "WHERE d.id_pedido = %s" + (" FOR UPDATE" if bloquear else ""),

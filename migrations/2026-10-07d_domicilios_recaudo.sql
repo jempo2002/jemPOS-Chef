@@ -18,8 +18,9 @@
 -- 3) pedido_domicilios: una fila por domicilio (PK = id_pedido).
 --    estado: por_despachar -> despachado (salio con el domiciliario) ->
 --    entregado (el cliente lo recibio) -> liquidado (el cajero recibio la
---    plata). metodo_pago es como va a pagar el cliente: solo 'Efectivo' suma a
---    lo que el domiciliario debe entregar. Si el pedido ya se cobro antes de
+--    plata). metodo_pago es como va a pagar el cliente: 'Efectivo' suma todo a
+--    lo que el domiciliario debe entregar y 'Mixto' solo `monto_efectivo` (el
+--    resto llega por transferencia). Si el pedido ya se cobro antes de
 --    salir (pago anticipado), el domiciliario no cobra nada. Al liquidar un
 --    domicilio sin cobrar se crea la venta (id_venta) en la caja abierta.
 --    No se borran: son el comprobante de quien llevo que y cuanto entrego.
@@ -64,7 +65,8 @@ CREATE TABLE IF NOT EXISTS `pedido_domicilios` (
   `id_sede` bigint(20) UNSIGNED NOT NULL,
   `direccion` varchar(160) NOT NULL,
   `estado` enum('por_despachar','despachado','entregado','liquidado') NOT NULL DEFAULT 'por_despachar',
-  `metodo_pago` enum('Efectivo','Nequi/Daviplata','Tarjeta') NOT NULL DEFAULT 'Efectivo',
+  `metodo_pago` enum('Efectivo','Nequi/Daviplata','Tarjeta','Mixto') NOT NULL DEFAULT 'Efectivo',
+  `monto_efectivo` decimal(12,2) DEFAULT NULL,
   `paga_con` decimal(12,2) DEFAULT NULL,
   `id_domiciliario` bigint(20) UNSIGNED DEFAULT NULL,
   `despachado_en` datetime DEFAULT NULL,
