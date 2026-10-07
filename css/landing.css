@@ -20,8 +20,8 @@
   --color-surface: #ffffff;
   --color-border: #e7e2dc;
   --color-border-strong: #d6cfc7;
-  --color-text: #1c1917;
-  --color-text-muted: #5f5750;
+  --color-text: #120f0d;
+  --color-text-muted: #3f3a35;
   --color-success: #047857;
   --color-success-soft: #ecfdf5;
   --color-warning: #b45309;
@@ -167,7 +167,7 @@ a { color: inherit; }
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding: 0.4rem 0.9rem; border: 1px solid var(--color-border-strong);
   border-radius: 999px; background: var(--color-surface);
-  color: #57534e; font-size: 0.82rem; font-weight: 600;
+  color: #292524; font-size: 0.82rem; font-weight: 700;
 }
 
 .chip {
@@ -515,3 +515,63 @@ a { color: inherit; }
   .card:hover { transform: translateY(-4px); border-color: var(--color-primary-line); box-shadow: var(--shadow-md); }
   .plan--destacado:hover { border-color: var(--color-primary); }
 }
+
+/* ------------------------------------------------------------
+   v2: mas contraste, titulos con peso y color, secciones invertidas
+   ------------------------------------------------------------ */
+.hero__title { font-weight: 900; font-size: clamp(2.1rem, 6.6vw, 3.7rem); letter-spacing: -0.035em; line-height: 1.05; }
+.hero__subtitle { color: #292524; font-weight: 500; }
+.seccion__titulo { font-weight: 900; font-size: clamp(1.8rem, 5vw, 3rem); letter-spacing: -0.035em; line-height: 1.08; }
+.seccion__texto { color: #292524; font-weight: 500; }
+.seccion__eyebrow {
+  display: inline-block; padding: 0.3rem 0.8rem; border-radius: 999px;
+  background: var(--color-primary); color: #fff; letter-spacing: 0.08em;
+}
+.ventaja__titulo, .etapa__titulo, .plan__nombre { font-weight: 800; color: var(--color-text); }
+.ventaja__texto, .etapa p, .plan__desc, .cifra__texto, .cocina__lista li, .faq details p { color: #2e2a26; }
+.nota-cifras, .footer { color: #44403c; }
+.ventaja__badge { color: #7c2d12; }
+.ventaja__badge--ahorro { color: #065f46; }
+.chip { color: #065f46; font-weight: 700; }
+.kpi__label, .comanda__titulo, .mesa { color: #44403c; }
+
+/* Palabra clave del titulo: degradado naranja + subrayado que se dibuja */
+.marca, .hero__acento {
+  position: relative; color: var(--color-primary);
+  background: linear-gradient(95deg, #9a3412 0%, #c2410c 40%, #ea580c 75%, #d97706 100%);
+  -webkit-background-clip: text; background-clip: text;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .marca, .hero__acento { -webkit-text-fill-color: transparent; }
+}
+.marca::after, .hero__acento::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -0.06em; height: 0.13em;
+  border-radius: 999px; background: linear-gradient(90deg, #fdba74, #f59e0b);
+  -webkit-text-fill-color: initial; transform-origin: left;
+}
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  .marca::after { transform: scaleX(0); transition: transform 0.8s var(--ease-smooth) 0.35s; }
+  .is-visible .marca::after, .marca.is-visible::after { transform: scaleX(1); }
+  .hero__acento::after { animation: subrayar 0.9s var(--ease-smooth) 0.5s both; }
+  .seccion__titulo { transition: letter-spacing 0.6s var(--ease-smooth); }
+  .is-visible .seccion__titulo { letter-spacing: -0.04em; }
+}
+@keyframes subrayar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* Recorrido: titulo en un renglon, "cuatro pasos" centrado abajo, etapas centradas */
+.seccion__head--ancho { max-width: none; }
+.seccion__titulo .linea { display: block; }
+@media (min-width: 760px) {
+  .seccion__head--ancho .seccion__titulo .linea:first-child { white-space: nowrap; font-size: clamp(2rem, 4.2vw, 3.2rem); }
+}
+.etapa { justify-items: center; text-align: center; }
+.etapa__num { width: 2.6rem; height: 2.6rem; font-size: 1.1rem; }
+
+/* Cocina: grafico a la izquierda, texto a la derecha (al reves que jemPOS) */
+@media (min-width: 900px) {
+  .cocina .kds { order: -1; }
+  .cocina__texto { padding-left: 1rem; }
+}
+.cta-final__title { font-weight: 900; letter-spacing: -0.035em; }
+.marca-claro { color: #fdba74; text-decoration: underline; text-decoration-thickness: 0.1em; text-underline-offset: 0.18em; text-decoration-color: #f59e0b; }
+.cta-final__text { color: #fff; }
