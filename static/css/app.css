@@ -336,3 +336,44 @@ details[open] { flex-basis: 100%; }
   .conteo__item { padding: 0.25rem 0.6rem; font-size: 0.82rem; }
 }
 @media (prefers-reduced-motion: reduce) { .mesa { transition: none; } .mesa:hover { transform: none; } }
+
+/* --- Domicilios y recaudo de domiciliarios -------------------------------- */
+.plano--domicilios { grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
+.domicilio { min-height: 0; }
+.domicilio:hover { transform: none; }
+.domicilio__direccion { font-weight: 600; overflow-wrap: anywhere; }
+.domicilio__acciones { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.domicilio__acciones .btn { flex: 1 1 auto; text-align: center; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.domicilio--por_despachar { border-color: var(--primario-linea); background: var(--primario-suave); }
+.domicilio--por_despachar::before { background: var(--primario-500); }
+.domicilio--por_despachar .mesa__estado { color: var(--primario-hover); background: #ffedd5; }
+.domicilio--despachado::before { background: #0369a1; }
+.domicilio--despachado .mesa__estado { color: #075985; background: #e0f2fe; }
+.pestana span { margin-left: 0.35rem; font-size: 0.8rem; opacity: 0.8; }
+.lista-domiciliarios { list-style: none; padding: 0; margin: 0 0 1rem; display: grid; gap: 0.25rem; }
+.domiciliario-item { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid var(--borde); }
+.domiciliario-item a { text-decoration: none; }
+.resumen-cobro { display: grid; gap: 0.35rem; padding: 0.75rem; border-radius: var(--radio); background: var(--fondo); }
+
+.recaudo__tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: 0.9rem; margin-top: 1rem; }
+.recaudo__tarjeta {
+  display: grid; gap: 0.6rem; align-content: start; padding: 1rem; border-radius: var(--radio-lg);
+  border: 1px solid var(--borde); border-left: 0.35rem solid var(--primario-500); background: var(--superficie);
+}
+.recaudo__tarjeta--libre { border-left-color: var(--ok); }
+.recaudo__tarjeta--alerta { border-color: #fecaca; border-left-color: var(--peligro); background: var(--peligro-suave); }
+.recaudo__cifra { display: grid; gap: 0.1rem; padding: 0.75rem; border-radius: var(--radio); background: var(--fondo); }
+.recaudo__cifra small { color: var(--texto-suave); font-weight: 600; }
+.recaudo__cifra strong { font-size: 1.75rem; font-weight: 800; line-height: 1.1; }
+.recaudo__tarjeta--alerta .recaudo__cifra { background: var(--superficie); }
+.recaudo__tarjeta--alerta .recaudo__cifra strong { color: var(--peligro); }
+.recaudo__alerta { margin: 0; color: var(--peligro); font-weight: 700; }
+.recaudo__lista { margin: 0; }
+.recaudo__domicilio { flex-wrap: wrap; align-items: center; }
+.recaudo__domicilio input[type="checkbox"] { min-height: auto; width: 1.3rem; height: 1.3rem; }
+.recaudo__metodo { min-height: 36px; padding: 0.25rem 0.5rem; }
+.recaudo__tope { margin-top: 1rem; }
+.btn--grande { min-height: 3.25rem; font-size: 1.1rem; width: 100%; }
+.cliente-llevar .cliente-direccion { flex-basis: 100%; }
+.recaudo__domicilio .linea__info { flex: 1 1 8rem; }
+.recaudo__regresar { justify-self: start; min-height: 32px; padding: 0; font-size: 0.85rem; }

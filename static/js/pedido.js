@@ -1,5 +1,9 @@
-/* Pedido de una mesa o para llevar: carta, cuenta, enviar a cocina,
- * precuenta, cobro y cuenta dividida.
+/* Pedido de una mesa, para llevar o domicilio: carta, cuenta, enviar a
+ * cocina, precuenta, cobro y cuenta dividida.
+ *
+ * Un domicilio es un para llevar con direccion (/domicilio/<uuid>). Se
+ * despacha desde Domicilios; mientras va en camino esta pantalla solo lo
+ * muestra: el pago se recibe en Caja al regresar el domiciliario.
  *
  * La misma pantalla sirve para los dos: una mesa trabaja en /api/mesas/<id> y
  * un para llevar en /api/llevar/<uuid> (el uuid lo pone el dispositivo, asi
@@ -25,6 +29,7 @@
   var CLAVE_PEDIDO = 'chef_pedido_v1_' + (llevar || idMesa);
   var CLAVE_BORRADOR = 'chef_borrador_v1_' + (llevar || idMesa);
   var CLAVE_CLIENTE = 'chef_cliente_v1_' + llevar;
+  var abiertoComoDomicilio = raiz.dataset.domicilio === '1';
   var ESTADOS = { pendiente: 'Sin enviar', enviado: 'En cocina', listo: 'Listo', entregado: 'Entregado', anulado: 'Anulado' };
 
   var carta = Chef.leer(CLAVE_CARTA, []);
@@ -115,6 +120,10 @@
       Chef.mostrar('Este pedido ya está cerrado.', true);
       return;
     }
+    if (enCaminoDomicilio()) {
+      Chef.mostrar('Este domicilio ya salió. Para agregar algo, abre otro pedido.', true);
+      return;
+    }
     var linea = borrador.find(function (l) { return l.id_producto === p.id_producto && !l.nota; });
     if (linea) linea.cantidad += 1;
     else borrador.push({ uuid: Chef.uuid(), id_producto: p.id_producto, nombre: p.nombre, precio: p.precio_venta, cantidad: 1, nota: '' });
@@ -132,7 +141,8 @@
     $('info-pedido').textContent = pedido
       ? ESTADO_PEDIDO[pedido.estado] + (pedido.entregado ? ' y entregado' : '') + ' · desde las ' + pedido.abierto_en +
         ' · ' + (pedido.mesero || '') + (pedido.comensales ? ' · ' + pedido.comensales + ' personas' : '')
-      : (llevar ? 'Pedido nuevo. Toca un plato para empezar.' : 'Mesa libre. Toca un plato para empezar.');
+      : (llevar ? (esDomicilio() ? 'Domicilio nuevo. Escribe la dirección y toca un plato para empezar.' : 'Pedido nuevo. Toca un plato para empezar.')
+        : 'Mesa libre. Toca un plato para empezar.');
     if (!navigator.onLine) $('info-pedido').textContent += ' · sin conexión';
 
     var ul = $('lineas');
@@ -195,14 +205,18 @@
     $('total').textContent = Chef.pesos(total);
     var hayCuenta = !!pedido && !cerrado;
     $('btn-mover').hidden = !hayCuenta || !!llevar;
-    $('btn-entregar').hidden = !llevar || !pedido || pedido.entregado || pedido.estado === 'anulado';
-    $('btn-anular-cuenta').hidden = !hayCuenta;
-    $('btn-cobrar').hidden = !(puedeCobrar && hayCuenta);
-    $('btn-dividir').hidden = !(puedeCobrar && puedeDividir && hayCuenta);
+    // Un domicilio se despacha y se entrega desde Domicilios; en camino se cobra en Caja.
+    var enCamino = enCaminoDomicilio();
+    $('btn-entregar').hidden = !llevar || esDomicilio() || !pedido || pedido.entregado || pedido.estado === 'anulado';
+    $('btn-anular-cuenta').hidden = !hayCuenta || enCamino;
+    $('btn-cobrar').hidden = !(puedeCobrar && hayCuenta) || enCamino;
+    $('btn-dividir').hidden = !(puedeCobrar && puedeDividir && hayCuenta) || enCamino;
+    pintarAvisoDomicilio(enCamino);
     $('btn-precuenta').hidden = !hayCuenta;
     $('btn-enviar').hidden = cerrado;
-    $('productos').classList.toggle('productos--bloqueados', cerrado);
-    if (llevar) $('bloque-cliente').hidden = cerrado;
+    if (llevar) $('bloque-cliente').hidden = cerrado || enCamino;
+    $('productos').classList.toggle('productos--bloqueados', cerrado || enCamino);
+    if (enCamino) $('btn-enviar').hidden = true;
     $('btn-guardar').hidden = borrador.length === 0;
     var porEnviar = borrador.length + (detalle ? detalle.sin_enviar : 0);
     $('btn-enviar').disabled = porEnviar === 0;
@@ -210,8 +224,33 @@
   }
 
   function titulo() {
-    if (detalle && detalle.lugar) return detalle.lugar.titulo;
-    return llevar ? 'Para llevar' : 'Mesa';
+    if (detalle && detalle.lugar && (detalle.pedido || !llevar)) return detalle.lugar.titulo;
+    return llevar ? (esDomicilio() ? 'Domicilio nuevo' : 'Para llevar') : 'Mesa';
+  }
+
+  /* --- domicilio ------------------------------------------------------- */
+
+  function esDomicilio() {
+    // Antes del primer plato el servidor todavia no sabe que es un domicilio.
+    if (detalle && detalle.pedido && detalle.lugar) return detalle.lugar.tipo === 'domicilio';
+    return abiertoComoDomicilio;
+  }
+
+  function datosDomicilio() { return (detalle && detalle.lugar && detalle.lugar.domicilio) || null; }
+
+  function enCaminoDomicilio() {
+    var d = datosDomicilio();
+    return !!d && (d.estado === 'despachado' || d.estado === 'entregado');
+  }
+
+  function pintarAvisoDomicilio(enCamino) {
+    var aviso = $('aviso-domicilio');
+    if (!aviso) return;
+    var d = datosDomicilio();
+    if (!d || d.estado === 'por_despachar' || d.estado === 'liquidado') { aviso.hidden = true; return; }
+    aviso.textContent = (d.estado === 'entregado' ? 'Entregado por ' : 'En camino con ') + d.domiciliario + ' a ' + d.direccion +
+      '. ' + (enCamino ? 'El pago se recibe en Caja cuando regrese el domiciliario.' : '');
+    aviso.hidden = false;
   }
 
   function pintarCliente() {
@@ -220,6 +259,11 @@
     var guardado = Chef.leer(CLAVE_CLIENTE, {});
     $('cliente-nombre').value = guardado.cliente || (lugar && lugar.cliente) || '';
     $('cliente-telefono').value = guardado.telefono || (lugar && lugar.telefono) || '';
+    $('bloque-direccion').hidden = !esDomicilio();
+    var dom = datosDomicilio();
+    $('cliente-direccion').value = guardado.direccion || (dom && dom.direccion) || '';
+    $('cliente-direccion').required = esDomicilio();
+    if (esDomicilio()) $('volver').href = '/domicilios';
   }
 
   function cargar() {
@@ -251,6 +295,15 @@
     if (llevar) {
       cuerpo.cliente = $('cliente-nombre').value.trim() || null;
       cuerpo.telefono = $('cliente-telefono').value.trim() || null;
+    }
+    if (llevar && esDomicilio()) {
+      cuerpo.domicilio = true;
+      cuerpo.direccion = $('cliente-direccion').value.trim() || null;
+      if (!cuerpo.direccion && !(detalle && detalle.pedido)) {
+        Chef.mostrar('Escribe la dirección del domicilio.', true);
+        $('cliente-direccion').focus();
+        return Promise.resolve(false);
+      }
     }
     var n = borrador.reduce(function (s, l) { return s + l.cantidad; }, 0);
     return Chef.enviar('POST', API + '/items', cuerpo, { etiqueta: etiqueta(n + ' producto(s)'), mesa: COLA })
@@ -389,7 +442,7 @@
     if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
     Chef.mostrar(datos.msg, false);
     window.localStorage.removeItem(CLAVE_PEDIDO);
-    window.setTimeout(function () { window.location.href = '/mesas'; }, 900);
+    window.setTimeout(function () { window.location.href = esDomicilio() ? '/domicilios' : '/mesas'; }, 900);
   }
 
   /* --- cuenta dividida ------------------------------------------------- *
@@ -662,7 +715,7 @@
     Chef.api('POST', url, cuerpo).then(function (datos) {
       if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
       Chef.mostrar(datos.msg, false);
-      if (!anulando) { window.location.href = '/mesas'; return; }
+      if (!anulando) { window.location.href = esDomicilio() ? '/domicilios' : '/mesas'; return; }
       cargar();
     }, function () { Chef.mostrar('Para anular se necesita conexión.', true); });
   }
@@ -697,9 +750,10 @@
     b.addEventListener('click', function () { division.modo = b.dataset.modo; pintarDivision(); });
   });
   if (llevar) {
-    ['cliente-nombre', 'cliente-telefono'].forEach(function (id) {
+    ['cliente-nombre', 'cliente-telefono', 'cliente-direccion'].forEach(function (id) {
       $(id).addEventListener('change', function () {
-        Chef.guardar(CLAVE_CLIENTE, { cliente: $('cliente-nombre').value.trim(), telefono: $('cliente-telefono').value.trim() });
+        Chef.guardar(CLAVE_CLIENTE, { cliente: $('cliente-nombre').value.trim(), telefono: $('cliente-telefono').value.trim(),
+          direccion: $('cliente-direccion').value.trim() });
       });
     });
   }

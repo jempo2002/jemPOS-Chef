@@ -2,7 +2,8 @@
 
 Plan Completo, sede Principal, 2 zonas con 10 mesas, una carta corta (cocina y
 bar, con inventario en las bebidas), insumos con compras y recetas para
-cuatro platos (uno pasa del 35 % de costo, para ver la alerta) y un usuario
+cuatro platos (uno pasa del 35 % de costo, para ver la alerta), dos
+domiciliarios (Pedro y Luisa) y un usuario
 por rol:
 
     admin@demo.chef    Admin   (configura, cobra, anula)
@@ -28,6 +29,7 @@ sys.path.insert(0, RAIZ)
 from app import create_app  # noqa: E402
 from app.services import (  # noqa: E402
     carta_service,
+    domicilios_service,
     inventario_service,
     master_service,
     mesas_service,
@@ -103,6 +105,8 @@ def main() -> int:
             conn.close()
         if existente:
             id_tienda, id_sede, id_admin = _ids(NOMBRE)
+            if sembrar_domiciliarios(id_tienda, id_sede):
+                print(f'"{NOMBRE}": le agregué los domiciliarios {", ".join(DOMICILIARIOS)}.')
             if sembrar_recetas(id_tienda, id_sede, id_admin):
                 print(f'"{NOMBRE}" ya existía: le agregué {len(INSUMOS)} insumos y {len(RECETAS)} recetas.')
             else:
@@ -139,10 +143,23 @@ def main() -> int:
                 )
 
         sembrar_recetas(id_tienda, id_sede, id_admin)
+        sembrar_domiciliarios(id_tienda, id_sede)
 
     print(f'Listo: "{NOMBRE}" con {sum(map(len, ZONAS.values()))} mesas, {len(CARTA)} productos y {len(RECETAS)} recetas.')
     print("Usuarios: " + ", ".join(f"{p}@{DOMINIO}" for p in ["admin"] + [u[1] for u in USUARIOS]))
     return 0
+
+
+DOMICILIARIOS = ("Pedro", "Luisa")
+
+
+def sembrar_domiciliarios(id_tienda: int, id_sede: int) -> bool:
+    """Dos domiciliarios para probar despachos y recaudo, si no hay ninguno."""
+    if domicilios_service.listar_domiciliarios(id_sede):
+        return False
+    for nombre in DOMICILIARIOS:
+        domicilios_service.crear_domiciliario(id_tienda, id_sede, {"nombre": nombre})
+    return True
 
 
 def _ids(nombre: str) -> tuple[int, int, int]:

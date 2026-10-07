@@ -13,6 +13,7 @@
   <div class="acciones">
     {% if usuario.rol == 'Admin' %}<a class="btn" href="{{ url_for('salon.configurar_mesas_page') }}">Editar mesas</a>{% endif %}
     {% if puede_cobrar %}<a class="btn" href="{{ url_for('salon.caja_page') }}">Ir a caja</a>{% endif %}
+    <a class="btn" href="{{ url_for('domicilios.domicilios_page') }}">Domicilios</a>
     <button class="btn btn--primario btn--llevar" type="button" id="btn-nuevo-llevar">
       <span aria-hidden="true">+</span> Pedido para llevar
     </button>

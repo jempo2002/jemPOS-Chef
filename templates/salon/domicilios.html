@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Domicilios{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/salon-comun.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/domicilios.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+<div id="domicilios" data-cobrar="{{ 1 if puede_cobrar else 0 }}">
+  <div class="cabecera">
+    <div>
+      <h1>Domicilios</h1>
+      <p class="muted" id="resumen-domicilios">Cargando domicilios…</p>
+    </div>
+    <div class="acciones">
+      {% if puede_cobrar %}<a class="btn" href="{{ url_for('salon.caja_page') }}#recaudo">Recibir plata en caja</a>{% endif %}
+      <button class="btn btn--primario btn--llevar" type="button" id="btn-nuevo-domicilio">
+        <span aria-hidden="true">+</span> Nuevo domicilio
+      </button>
+    </div>
+  </div>
+
+  <nav class="pestanas" id="filtros" aria-label="Filtrar domicilios">
+    <button class="pestana pestana--activa" type="button" data-filtro="todos">Todos <span data-n="todos">0</span></button>
+    <button class="pestana" type="button" data-filtro="por_despachar">Por despachar <span data-n="por_despachar">0</span></button>
+    <button class="pestana" type="button" data-filtro="despachado">En camino <span data-n="despachado">0</span></button>
+    <button class="pestana" type="button" data-filtro="entregado">Entregados <span data-n="entregado">0</span></button>
+  </nav>
+  <div class="plano plano--domicilios" id="lista" aria-live="polite"></div>
+  <p class="muted vacio" id="sin-domicilios" hidden>
+    No hay domicilios en curso. Toca <strong>Nuevo domicilio</strong> cuando un cliente pida por teléfono o WhatsApp.
+  </p>
+
+  <section class="tarjeta" aria-labelledby="titulo-domiciliarios">
+    <h2 id="titulo-domiciliarios">Domiciliarios</h2>
+    <ul class="lista-domiciliarios" id="domiciliarios"></ul>
+    <p class="muted" id="sin-domiciliarios" hidden>
+      Todavía no hay domiciliarios.{% if puede_cobrar %} Agrégalos aquí para poder despachar.{% else %} Pídele al cajero que los agregue.{% endif %}
+    </p>
+    {% if puede_cobrar %}
+    <form class="form form--fila" id="form-domiciliario">
+      <label>Nombre <input name="nombre" maxlength="60" required placeholder="Ej. Pedro" autocomplete="off" /></label>
+      <label>Celular <input name="telefono" maxlength="20" inputmode="tel" placeholder="Opcional" autocomplete="off" /></label>
+      <button class="btn" type="submit">Agregar domiciliario</button>
+    </form>
+    {% endif %}
+  </section>
+</div>
+
+<dialog id="dlg-despachar" class="dialogo">
+  <form method="dialog" class="form" id="form-despachar">
+    <h2>Despachar <span id="desp-titulo"></span></h2>
+    <p class="muted" id="desp-direccion"></p>
+    <label>¿Quién lo lleva?
+      <select id="desp-domiciliario" required></select>
+    </label>
+    <p class="aviso aviso--ok" id="desp-pagado" hidden>Ya está pagado: el domiciliario no cobra nada.</p>
+    <div id="desp-cobro">
+      <label>¿Cómo paga el cliente?
+        <select id="desp-metodo">
+          <option value="efectivo">Efectivo</option>
+          <option value="nequi">Nequi / Daviplata / transferencia</option>
+          <option value="tarjeta">Tarjeta (datáfono)</option>
+          <option value="mixto">Mixto (efectivo + transferencia)</option>
+        </select>
+      </label>
+      <label id="desp-bloque-mixto" hidden>Parte en efectivo <input id="desp-mixto" inputmode="numeric" /></label>
+      <label id="desp-bloque-paga">¿Con cuánto paga? (para llevar el vuelto)
+        <input id="desp-paga-con" inputmode="numeric" placeholder="Opcional" />
+        <span class="form--fila" id="desp-billetes"></span>
+      </label>
+    </div>
+    <div class="resumen-cobro">
+      <p class="fila-total">Cobrar al cliente <strong id="desp-cobrar"></strong></p>
+      <p class="fila-total" id="desp-fila-vuelto" hidden>Llevar de vuelto <strong id="desp-vuelto"></strong></p>
+    </div>
+    <label class="check"><input type="checkbox" id="desp-imprimir" checked /> Imprimir la hoja para el domiciliario</label>
+    <div class="form--fila">
+      <button class="btn btn--primario" type="submit" value="ok">Despachar</button>
+      <button class="btn" type="submit" value="cancelar" formnovalidate>Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="impresion" class="impresion" aria-hidden="true"></div>
+{% endblock %}

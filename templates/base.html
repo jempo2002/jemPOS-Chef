@@ -14,6 +14,7 @@
       {% else %}
         <a href="{{ url_for('core.inicio') }}">Inicio</a>
         {% if usuario.rol in ('Admin', 'Cajero', 'Mesero') %}<a href="{{ url_for('salon.mesas_page') }}">Mesas</a>{% endif %}
+        {% if usuario.rol in ('Admin', 'Cajero', 'Mesero') %}<a href="{{ url_for('domicilios.domicilios_page') }}">Domicilios</a>{% endif %}
         {% if usuario.rol in ('Admin', 'Cocina') %}<a href="{{ url_for('salon.cocina_page') }}">Cocina</a>{% endif %}
         {% if usuario.rol in ('Admin', 'Cajero') %}<a href="{{ url_for('salon.caja_page') }}">Caja</a>{% endif %}
         {% if usuario.rol == 'Admin' %}

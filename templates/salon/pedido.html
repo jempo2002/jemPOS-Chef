@@ -5,12 +5,13 @@
 <script src="{{ url_for('static', filename='js/pedido.js') }}" defer></script>
 {% endblock %}
 {% block content %}
-<div id="pedido" data-mesa="{{ id_mesa or '' }}" data-llevar="{{ llevar or '' }}" data-cobrar="{{ 1 if puede_cobrar else 0 }}"
+<div id="pedido" data-mesa="{{ id_mesa or '' }}" data-llevar="{{ llevar or '' }}" data-domicilio="{{ 1 if domicilio else 0 }}" data-cobrar="{{ 1 if puede_cobrar else 0 }}"
      data-admin="{{ 1 if es_admin else 0 }}" data-dividir="{{ 1 if dividir else 0 }}">
   <div class="cabecera">
     <div>
-      <a class="volver" href="{{ url_for('salon.mesas_page') }}">← Mesas</a>
-      <h1 id="titulo-mesa">{{ 'Para llevar' if llevar else 'Mesa' }}</h1>
+      {% if domicilio %}<a class="volver" id="volver" href="{{ url_for('domicilios.domicilios_page') }}">← Domicilios</a>
+      {% else %}<a class="volver" id="volver" href="{{ url_for('salon.mesas_page') }}">← Mesas</a>{% endif %}
+      <h1 id="titulo-mesa">{{ 'Domicilio' if domicilio else ('Para llevar' if llevar else 'Mesa') }}</h1>
       <p class="muted" id="info-pedido">Cargando…</p>
     </div>
     <div class="acciones">
@@ -34,7 +35,10 @@
       <div class="form--fila cliente-llevar" id="bloque-cliente">
         <label>Cliente <input id="cliente-nombre" maxlength="80" placeholder="Nombre" autocomplete="off" /></label>
         <label>Teléfono <input id="cliente-telefono" maxlength="20" inputmode="tel" placeholder="Opcional" autocomplete="off" /></label>
+        <label class="cliente-direccion" id="bloque-direccion" hidden>Dirección
+          <input id="cliente-direccion" maxlength="160" placeholder="Calle, número, barrio y referencia" autocomplete="off" /></label>
       </div>
+      <p class="aviso" id="aviso-domicilio" hidden></p>
       {% endif %}
       <ul class="lineas" id="lineas"></ul>
       <div id="bloque-nuevos" hidden>

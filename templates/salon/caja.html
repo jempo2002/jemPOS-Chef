@@ -13,6 +13,7 @@
       <button class="btn btn--primario" type="submit">Abrir caja</button>
     </form>
   </section>
+  {% include "salon/_recaudo.html" %}
 {% else %}
   <p class="muted">Abierta desde {{ turno.abierto_desde }}.</p>
   <section class="tarjeta">
@@ -26,6 +27,7 @@
     </div>
     <p class="muted">La propina no cuenta como venta, pero la propina en efectivo sí está en el cajón y por eso suma a lo que debe haber. En Nequi cuentan los cobros por Nequi/Daviplata (con su propina) y la parte Nequi de los pagos mixtos.</p>
   </section>
+  {% include "salon/_recaudo.html" %}
   <section class="tarjeta">
     <h2>Gastos del turno</h2>
     <form class="form form--fila" id="form-gasto" data-api="POST {{ url_for('salon.api_caja_gasto') }}">
