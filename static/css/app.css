@@ -240,6 +240,8 @@ details[open] { flex-basis: 100%; }
 .cifras div { display: grid; gap: 0.1rem; padding: 0.75rem; border-radius: var(--radio); background: var(--fondo); }
 .cifras small { color: var(--texto-suave); font-weight: 600; }
 .cifras strong { font-size: 1.25rem; }
+.cifras .cifra--nequi { background: #f5eefb; border: 1px solid #e3d2f3; }
+.cifras .cifra--nequi small { color: #6b2c91; }
 .lista-simple { list-style: none; margin: 0 0 0.75rem; padding: 0; display: grid; gap: 0.5rem; }
 
 /* --- Recetas e insumos ----------------------------------------------------- */

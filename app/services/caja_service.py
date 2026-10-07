@@ -43,12 +43,22 @@ def turno_abierto(cur, id_sede: int, bloquear: bool = False) -> dict | None:
 
 
 def _resumen(cur, turno: dict) -> dict:
+    """Cifras del turno. Nequi = lo que debe haber entrado por Nequi/Daviplata
+    (con su propina). En una venta Mixto de cuenta dividida se suman solo las
+    partes pagadas por Nequi (la transferencia de esa venta puede incluir
+    tarjeta); en un Mixto cobrado de una vez, la transferencia es Nequi."""
     cur.execute(
-        "SELECT COUNT(*) AS ventas, COALESCE(SUM(total_final), 0) AS total, COALESCE(SUM(propina), 0) AS propinas, "
-        "COALESCE(SUM(CASE metodo_pago WHEN 'Efectivo' THEN total_final + propina "
-        "  WHEN 'Mixto' THEN monto_efectivo ELSE 0 END), 0) AS efectivo "
-        "FROM ventas WHERE id_turno = %s AND estado_venta = 'Pagada'",
-        (turno["id_turno"],),
+        "SELECT COUNT(*) AS ventas, COALESCE(SUM(v.total_final), 0) AS total, COALESCE(SUM(v.propina), 0) AS propinas, "
+        "COALESCE(SUM(CASE v.metodo_pago WHEN 'Efectivo' THEN v.total_final + v.propina "
+        "  WHEN 'Mixto' THEN v.monto_efectivo ELSE 0 END), 0) AS efectivo, "
+        "COALESCE(SUM(CASE WHEN v.metodo_pago = 'Nequi/Daviplata' THEN v.total_final + v.propina "
+        "  WHEN v.metodo_pago = 'Mixto' THEN COALESCE(pc.nequi, v.monto_transferencia, 0) ELSE 0 END), 0) AS nequi "
+        "FROM ventas v "
+        "LEFT JOIN (SELECT c.id_venta, SUM(CASE WHEN c.metodo_pago = 'Nequi/Daviplata' THEN c.monto + c.propina ELSE 0 END) AS nequi "
+        "  FROM pedido_cuentas c JOIN ventas vc ON vc.id_venta = c.id_venta "
+        "  WHERE vc.id_turno = %s AND vc.metodo_pago = 'Mixto' GROUP BY c.id_venta) pc ON pc.id_venta = v.id_venta "
+        "WHERE v.id_turno = %s AND v.estado_venta = 'Pagada'",
+        (turno["id_turno"], turno["id_turno"]),
     )
     r = cur.fetchone()
     inicial = Decimal(turno["monto_inicial"] or 0)
@@ -60,6 +70,7 @@ def _resumen(cur, turno: dict) -> dict:
         "total_ventas": float(r["total"]),
         "propinas": float(r["propinas"]),
         "efectivo_ventas": float(r["efectivo"]),
+        "nequi": float(r["nequi"]),
         "esperado_en_caja": float(Decimal(turno["monto_final_esperado"] or inicial)),
     }
 

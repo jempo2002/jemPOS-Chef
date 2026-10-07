@@ -49,6 +49,7 @@ def test_dividir_por_productos_crea_una_venta_por_persona(salon, crear):
 
     caja = salon.cajero.get("/api/caja").get_json()["turno"]
     assert caja["esperado_en_caja"] == 28000  # solo lo de Ana fue en efectivo
+    assert caja["nequi"] == 22000  # lo de Luis
     assert salon.mesero.get(f"/api/mesas/{salon.mesa}/pedido").get_json()["pedido"] is None
 
     # Reenviado desde la cola: no cobra otra vez.
@@ -73,6 +74,25 @@ def test_dividir_en_partes_iguales_una_venta_mixta(salon, crear):
     assert crear.fila("SELECT COUNT(*) AS n FROM pedido_cuentas WHERE modo = 'iguales'")["n"] == 3
     assert crear.fila("SELECT COUNT(*) AS n FROM detalle_ventas")["n"] == 2  # los platos reales
     assert detalle["pedido"]["id_pedido"] == crear.fila("SELECT id_pedido FROM ventas")["id_pedido"]
+    assert salon.cajero.get("/api/caja").get_json()["turno"]["nequi"] == 0  # la transferencia fue tarjeta
+
+
+def test_caja_suma_solo_lo_pagado_por_nequi(salon, crear):
+    _mesa_lista(salon, (salon.burger, 1), (salon.gaseosa, 1))  # 22.000 entre 3
+    r = salon.cajero.post(f"/api/mesas/{salon.mesa}/cobrar-dividido", json={"modo": "iguales", "partes": [
+        {"metodo": "efectivo"}, {"metodo": "nequi", "propina": 500}, {"metodo": "tarjeta"},
+    ]})
+    assert r.status_code == 200, r.get_json()
+    assert salon.cajero.get("/api/caja").get_json()["turno"]["nequi"] == 7333 + 500
+
+    # Mixto cobrado de una vez: la transferencia es Nequi.
+    _pedir(salon.mesero, salon.mesa, (salon.gaseosa, 1))
+    assert salon.mesero.post(f"/api/mesas/{salon.mesa}/comanda").status_code == 200
+    r = salon.cajero.post(f"/api/mesas/{salon.mesa}/cobrar", json={
+        "metodo": "mixto", "monto_efectivo": 1000, "monto_transferencia": 3000})
+    assert r.status_code == 200, r.get_json()
+    assert salon.cajero.get("/api/caja").get_json()["turno"]["nequi"] == 7333 + 500 + 3000
+    assert "Debe de haber en Nequi" in salon.cajero.get("/caja").get_data(as_text=True)
 
 
 def test_partes_iguales_mismo_metodo_no_es_mixto(salon, crear):

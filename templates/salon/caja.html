@@ -19,8 +19,9 @@
       <div><small>Propinas</small><strong>{{ turno.propinas|pesos }}</strong></div>
       <div><small>Base</small><strong>{{ turno.monto_inicial|pesos }}</strong></div>
       <div><small>Debe haber en efectivo</small><strong>{{ turno.esperado_en_caja|pesos }}</strong></div>
+      <div class="cifra--nequi"><small>Debe de haber en Nequi</small><strong>{{ turno.nequi|pesos }}</strong></div>
     </div>
-    <p class="muted">La propina no cuenta como venta, pero la propina en efectivo sí está en el cajón y por eso suma a lo que debe haber.</p>
+    <p class="muted">La propina no cuenta como venta, pero la propina en efectivo sí está en el cajón y por eso suma a lo que debe haber. En Nequi cuentan los cobros por Nequi/Daviplata (con su propina) y la parte Nequi de los pagos mixtos.</p>
   </section>
   <section class="tarjeta">
     <h2>Cerrar caja</h2>
