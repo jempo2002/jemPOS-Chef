@@ -174,3 +174,25 @@ def test_pantallas_de_llevar(salon):
     ref = str(uuid.uuid4())
     assert salon.mesero.get(f"/llevar/{ref}").status_code == 200
     assert salon.mesero.get("/llevar/xyz").status_code == 302
+
+
+def test_dividir_sin_propina_cobra_cero(salon, crear):
+    """El modal manda propina 0 por defecto; una parte sin propina no suma nada."""
+    _mesa_lista(salon, (salon.gaseosa, 2))
+    r = salon.cajero.post(f"/api/mesas/{salon.mesa}/cobrar-dividido", json={
+        "modo": "iguales", "partes": [{"metodo": "efectivo", "propina": 0}, {"metodo": "efectivo"}]})
+    assert r.status_code == 200, r.get_json()
+    assert [p["propina"] for p in r.get_json()["cobro"]["partes"]] == [0, 0]
+    assert float(crear.fila("SELECT propina FROM ventas")["propina"]) == 0
+
+
+def test_modal_dividir_arranca_con_propina_cero():
+    """Sin propina automatica: cada parte nueva del modal empieza en 0."""
+    import os
+    import re
+
+    ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "js", "pedido.js")
+    js = open(ruta, encoding="utf-8").read()
+    assert re.search(r"function nuevaParte\(n\) \{[^}]*propina: 0,", js)
+    assert "function propinaDe(p) { return p.propina || 0; }" in js
+    assert "monto * 0.1" not in js

@@ -400,7 +400,7 @@
 
   var division = null;
 
-  function nuevaParte(n) { return { etiqueta: 'Cuenta ' + n, metodo: 'efectivo', propina: null, items: {} }; }
+  function nuevaParte(n) { return { etiqueta: 'Cuenta ' + n, metodo: 'efectivo', propina: 0, items: {} }; }
 
   function lineasDivisibles() { return detalle.items.filter(function (i) { return i.estado !== 'anulado'; }); }
 
@@ -424,7 +424,8 @@
     });
   }
 
-  function propinaDe(p, monto) { return p.propina !== null ? p.propina : Math.round(monto * 0.1 / 100) * 100; }
+  // La propina de cada parte arranca en 0: solo se cobra si el cliente la pide.
+  function propinaDe(p) { return p.propina || 0; }
 
   function abrirDividir() {
     if (borrador.length || (detalle && detalle.sin_enviar)) {
@@ -508,7 +509,7 @@
     var aPagar = 0;
     division.partes.forEach(function (p, idx) {
       var monto = montos[idx];
-      var propina = propinaDe(p, monto);
+      var propina = propinaDe(p);
       aPagar += monto + propina;
       var li = el('li', 'linea parte');
       var nombre = el('input', 'parte__nombre');
@@ -566,7 +567,7 @@
       uuid: Chef.uuid(),
       id_pedido: detalle.pedido.id_pedido,
       partes: division.partes.map(function (p, idx) {
-        var parte = { etiqueta: p.etiqueta, metodo: p.metodo, propina: propinaDe(p, montos[idx]) };
+        var parte = { etiqueta: p.etiqueta, metodo: p.metodo, propina: propinaDe(p) };
         if (division.modo === 'items') {
           parte.items = Object.keys(p.items).map(function (id) { return { id_item: Number(id), cantidad: p.items[id] }; });
         }
@@ -594,7 +595,7 @@
         } else {
           t.appendChild(el('p', '', 'Parte ' + (idx + 1) + ' de ' + division.partes.length + ' de ' + Chef.pesos(detalle.total)));
         }
-        var propina = propinaDe(p, montos[idx]);
+        var propina = propinaDe(p);
         t.appendChild(el('p', 'ticket__total', 'Total ' + Chef.pesos(montos[idx])));
         t.appendChild(el('p', '', 'Propina (voluntaria) ' + Chef.pesos(propina)));
         t.appendChild(el('p', 'ticket__total', 'A pagar ' + Chef.pesos(montos[idx] + propina)));
