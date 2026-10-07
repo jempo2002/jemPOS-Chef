@@ -5,11 +5,11 @@ landing (index.html, seccion #planes), en COP por mes:
 
   Basico   $49.000  mesas, propina, caja y turnos. Una sola sede.
   Completo $69.000  + pantalla de cocina, cuenta dividida, recetas, multisede
-  Cadena   $99.000  + factura electronica, multisede
+  Cadena   $89.000  + factura electronica, multisede
 
 Multisede (reglas de jempo, 2026-10-07): solo Completo y Cadena, hasta
 MAX_SEDES sedes activas (mas sedes = un futuro Plan Corporativo). Cada sede
-extra paga cada mes el 50 % del plan (Completo $34.500, Cadena $49.500) y,
+extra paga cada mes el 50 % del plan (Completo $34.500, Cadena $44.500) y,
 una sola vez, el montaje de COSTO_MONTAJE_SEDE (capacitacion y levantamiento
 de inventario inicial). La base lo refuerza con triggers
 (migrations/2026-10-07_multisede_reglas.sql).
@@ -49,7 +49,7 @@ PLANES: dict[str, dict] = {
     },
     "cadena": {
         "nombre": "Cadena",
-        "precio": 99000,
+        "precio": 89000,
         "usuarios_por_sede": 8,
         "funciones": frozenset({"cocina", "cuenta_dividida", "recetas", "multisede", "factura"}),
     },
@@ -57,7 +57,7 @@ PLANES: dict[str, dict] = {
 for _plan in PLANES.values():
     _multisede = "multisede" in _plan["funciones"]
     _plan["max_sedes"] = MAX_SEDES if _multisede else 1
-    # Pesos enteros: 69.000 -> 34.500, 99.000 -> 49.500.
+    # Pesos enteros: 69.000 -> 34.500, 89.000 -> 44.500.
     _plan["sede_extra"] = round(_plan["precio"] * FRACCION_SEDE_EXTRA) if _multisede else None
 PLANES_VALIDOS = tuple(PLANES)
 
