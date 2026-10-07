@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Restaurantes{% endblock %}
+{% block content %}
+<h1>Restaurantes</h1>
+<p class="muted">{{ restaurantes|length }} restaurante{{ '' if restaurantes|length == 1 else 's' }} · Ingreso mensual de los que ya pagan: ${{ '{:,}'.format(mrr).replace(',', '.') }}</p>
+
+<section class="tarjeta">
+  <table class="tabla">
+    <thead><tr><th>Restaurante</th><th>Plan</th><th>Sedes</th><th>Usuarios</th><th>Mensualidad</th><th>Vence</th><th></th></tr></thead>
+    <tbody>
+    {% for r in restaurantes %}
+      <tr>
+        <td><strong>{{ r.nombre_negocio }}</strong><br /><small class="muted">{{ r.nit or '' }}</small></td>
+        <td>
+          <form class="form form--fila" data-api="PUT {{ url_for('master.api_plan', id_tienda=r.id_tienda) }}">
+            <select name="plan_id" aria-label="Plan">
+              {% for pid, p in planes.items() %}<option value="{{ pid }}" {% if pid == r.plan_id %}selected{% endif %}>{{ p.nombre }}</option>{% endfor %}
+            </select>
+            <button class="btn" type="submit">Cambiar</button>
+          </form>
+        </td>
+        <td>{{ r.sedes }}</td>
+        <td>{{ r.usuarios }}</td>
+        <td>${{ '{:,}'.format(r.mensualidad).replace(',', '.') }}</td>
+        <td>
+          {% if r.vence %}{{ r.vence.strftime('%d/%m/%Y') }}{% else %}Sin fecha{% endif %}
+          {% if r.en_prueba %}<span class="chip">Prueba</span>{% endif %}
+          {% if r.dias is not none and r.dias <= 0 %}<span class="chip chip--error">Vencida</span>{% endif %}
+        </td>
+        <td class="acciones">
+          <form class="form form--fila" data-api="POST {{ url_for('master.api_renovar', id_tienda=r.id_tienda) }}">
+            <select name="meses" aria-label="Meses">{% for m in periodos %}<option value="{{ m }}">{{ m }} mes{{ '' if m == 1 else 'es' }}</option>{% endfor %}</select>
+            <button class="btn" type="submit">Registrar pago</button>
+          </form>
+          <button class="btn-link btn-link--peligro" type="button"
+                  data-api="DELETE {{ url_for('master.api_eliminar', id_tienda=r.id_tienda) }}"
+                  data-confirmar="¿Eliminar {{ r.nombre_negocio }}? Sus usuarios dejan de entrar; el historial se conserva.">Eliminar</button>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">Todavía no hay restaurantes.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="tarjeta">
+  <h2>Nuevo restaurante</h2>
+  <p class="muted">Arranca con un mes de prueba del plan elegido.</p>
+  <form class="form form--rejilla" data-api="POST {{ url_for('master.api_crear') }}">
+    <label>Nombre del restaurante <input name="nombre_negocio" maxlength="150" required /></label>
+    <label>NIT <input name="nit" maxlength="30" /></label>
+    <label>Teléfono <input name="telefono" maxlength="20" inputmode="tel" /></label>
+    <label>Plan
+      <select name="plan_id">
+        {% for pid, p in planes.items() %}<option value="{{ pid }}" {% if pid == 'completo' %}selected{% endif %}>{{ p.nombre }} · ${{ '{:,}'.format(p.precio).replace(',', '.') }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Sede principal <input name="sede_nombre" maxlength="120" placeholder="Principal" /></label>
+    <label>Dirección <input name="sede_direccion" maxlength="200" /></label>
+    <label>Administrador <input name="admin_nombre" maxlength="150" required /></label>
+    <label>Cédula <input name="admin_cc" inputmode="numeric" maxlength="15" required /></label>
+    <label>Correo <input type="email" name="admin_correo" maxlength="150" autocomplete="off" required /></label>
+    <label>Contraseña <input type="password" name="admin_password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>
+    <button class="btn btn--primario" type="submit">Crear restaurante</button>
+  </form>
+</section>
+{% endblock %}

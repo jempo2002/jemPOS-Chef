@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Inicio{% endblock %}
+{% block content %}
+<h1>Hola, {{ usuario.nombre.split(' ')[0] }}</h1>
+<p class="muted">{% if nombre_sede %}Estás en la sede {{ nombre_sede }}. {% endif %}Tu restaurante tiene el Plan {{ plan.nombre }}.</p>
+<section class="tarjeta">
+  <h2>Lo que incluye tu plan</h2>
+  <ul class="funciones">
+    {% for texto, incluida in funciones %}
+      <li class="{{ 'si' if incluida else 'no' }}">{{ texto }}{% if not incluida %} <small>(no incluida)</small>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <p class="muted">Mesas, comandas y caja llegan en los próximos módulos.</p>
+</section>
+{% endblock %}

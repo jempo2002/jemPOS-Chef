@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  {% include "_head.html" %}
+  <title>{% block title %}{% endblock %} · jemPOS Chef</title>
+</head>
+<body class="auth">
+  <main class="auth__card">
+    <p class="marca">jemPOS <span>Chef</span></p>
+    {% include "_flashes.html" %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

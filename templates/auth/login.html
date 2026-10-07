@@ -1,0 +1,17 @@
+{% extends "auth/_base_auth.html" %}
+{% block title %}Iniciar sesión{% endblock %}
+{% block content %}
+<h1>Iniciar sesión</h1>
+<p class="muted">Entra con el correo que te dio el administrador del restaurante.</p>
+<form method="post" action="{{ url_for('auth.login') }}" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <label>Correo
+    <input type="email" name="correo" autocomplete="username" maxlength="150" required autofocus />
+  </label>
+  <label>Contraseña
+    <input type="password" name="contrasena" autocomplete="current-password" maxlength="128" required />
+  </label>
+  <button class="btn btn--primario" type="submit">Entrar</button>
+</form>
+<p class="pie"><a href="{{ url_for('auth.olvide_password') }}">¿Olvidaste tu contraseña?</a></p>
+{% endblock %}

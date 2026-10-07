@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Equipo{% endblock %}
+{% macro select_sede(actual, rol_admin) %}
+  <select name="id_sede" aria-label="Sede">
+    <option value="" {% if actual is none %}selected{% endif %}>{{ 'Todas (solo Admin)' if rol_admin else 'Elegir sede' }}</option>
+    {% for s in sedes %}<option value="{{ s.id_sede }}" {% if s.id_sede == actual %}selected{% endif %}>{{ s.nombre }}</option>{% endfor %}
+  </select>
+{% endmacro %}
+{% block content %}
+<h1>Equipo</h1>
+<p class="muted">Cajeros, meseros y cocina trabajan en una sede. Un Admin puede ver todas.</p>
+
+<section class="tarjeta">
+  <table class="tabla">
+    <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Sede</th><th></th></tr></thead>
+    <tbody>
+    {% for u in usuarios %}
+      <tr>
+        <td>{{ u.nombre_completo }}</td>
+        <td>{{ u.correo }}</td>
+        <td>{{ u.rol }}</td>
+        <td>{{ u.sede or 'Todas' }}</td>
+        <td class="acciones">
+          <details>
+            <summary>Editar</summary>
+            <form class="form form--fila" data-api="PUT {{ url_for('restaurante.api_usuarios_actualizar', id_usuario=u.id_usuario) }}">
+              <input name="nombre" value="{{ u.nombre_completo }}" maxlength="150" required aria-label="Nombre" />
+              <select name="rol" aria-label="Rol">
+                {% for r in roles %}<option {% if r == u.rol %}selected{% endif %}>{{ r }}</option>{% endfor %}
+              </select>
+              {{ select_sede(u.id_sede, true) }}
+              <button class="btn" type="submit">Guardar</button>
+            </form>
+          </details>
+          {% if u.id_usuario != session.id_usuario %}
+            <button class="btn-link btn-link--peligro" type="button"
+                    data-api="DELETE {{ url_for('restaurante.api_usuarios_desactivar', id_usuario=u.id_usuario) }}"
+                    data-confirmar="¿Desactivar a {{ u.nombre_completo }}? No podrá volver a entrar.">Desactivar</button>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="tarjeta">
+  <h2>Nuevo usuario</h2>
+  <form class="form form--rejilla" data-api="POST {{ url_for('restaurante.api_usuarios_crear') }}">
+    <label>Nombre completo <input name="nombre" maxlength="150" required /></label>
+    <label>Cédula <input name="cc" inputmode="numeric" maxlength="15" required /></label>
+    <label>Correo <input type="email" name="correo" maxlength="150" autocomplete="off" required /></label>
+    <label>Rol
+      <select name="rol">{% for r in roles %}<option {% if r == 'Mesero' %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+    </label>
+    <label>Sede {{ select_sede(none, true) }}</label>
+    <label>Contraseña <input type="password" name="password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>
+    <label>Repítela <input type="password" name="confirm_password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>
+    <button class="btn btn--primario" type="submit">Crear usuario</button>
+  </form>
+</section>
+{% endblock %}

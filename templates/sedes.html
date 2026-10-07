@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Sedes{% endblock %}
+{% block content %}
+<h1>Sedes</h1>
+<p class="muted">
+  Plan {{ plan_nombre }} · {{ sedes|length }} sede{{ '' if sedes|length == 1 else 's' }} activa{{ '' if sedes|length == 1 else 's' }}
+  · Mensualidad ${{ '{:,}'.format(mensualidad).replace(',', '.') }}
+  {% if sedes_extra %}(incluye {{ sedes_extra }} sede{{ '' if sedes_extra == 1 else 's' }} extra){% endif %}
+</p>
+
+<section class="tarjeta">
+  <table class="tabla">
+    <thead><tr><th>Sede</th><th>Dirección</th><th>Teléfono</th><th>Usuarios</th><th></th></tr></thead>
+    <tbody>
+    {% for s in sedes %}
+      <tr>
+        <td><strong>{{ s.nombre }}</strong>{% if s.es_principal %} <span class="chip">Principal</span>{% endif %}</td>
+        <td>{{ s.direccion or '' }}</td>
+        <td>{{ s.telefono or '' }}</td>
+        <td>{{ s.usuarios }}</td>
+        <td class="acciones">
+          <details>
+            <summary>Editar</summary>
+            <form class="form form--fila" data-api="PUT {{ url_for('restaurante.api_sedes_actualizar', id_sede=s.id_sede) }}">
+              <input name="nombre" value="{{ s.nombre }}" maxlength="120" required aria-label="Nombre" />
+              <input name="direccion" value="{{ s.direccion or '' }}" maxlength="200" aria-label="Dirección" />
+              <input name="telefono" value="{{ s.telefono or '' }}" maxlength="20" inputmode="tel" aria-label="Teléfono" />
+              <button class="btn" type="submit">Guardar</button>
+            </form>
+          </details>
+          {% if not s.es_principal %}
+            <button class="btn-link btn-link--peligro" type="button"
+                    data-api="DELETE {{ url_for('restaurante.api_sedes_eliminar', id_sede=s.id_sede) }}"
+                    data-confirmar="¿Eliminar la sede {{ s.nombre }}? Su historial se conserva.">Eliminar</button>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="tarjeta">
+  <h2>Nueva sede</h2>
+  {% if puede_crear %}
+    {% if sede_extra %}
+      <p class="muted">Cada sede por encima de la incluida suma ${{ '{:,}'.format(sede_extra).replace(',', '.') }} a la mensualidad.</p>
+    {% endif %}
+  {% else %}
+    <p class="muted">Tu Plan {{ plan_nombre }} incluye una sede. Para abrir más necesitas el Plan Cadena.</p>
+  {% endif %}
+  <form class="form form--fila" data-api="POST {{ url_for('restaurante.api_sedes_crear') }}">
+    <input name="nombre" placeholder="Nombre (ej. Centro)" maxlength="120" required aria-label="Nombre" />
+    <input name="direccion" placeholder="Dirección" maxlength="200" aria-label="Dirección" />
+    <input name="telefono" placeholder="Teléfono" maxlength="20" inputmode="tel" aria-label="Teléfono" />
+    <button class="btn btn--primario" type="submit">Crear sede</button>
+  </form>
+</section>
+{% endblock %}

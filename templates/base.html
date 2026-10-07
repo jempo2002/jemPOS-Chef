@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  {% include "_head.html" %}
+  <title>{% block title %}{% endblock %} · jemPOS Chef</title>
+</head>
+<body>
+  <header class="barra">
+    <a class="marca" href="{{ url_for('core.inicio') }}">jemPOS <span>Chef</span></a>
+    <nav class="barra__nav" aria-label="Principal">
+      {% if usuario.rol == 'Master' %}
+        <a href="{{ url_for('master.panel') }}">Restaurantes</a>
+      {% else %}
+        <a href="{{ url_for('core.inicio') }}">Inicio</a>
+        {% if usuario.rol == 'Admin' %}
+          <a href="{{ url_for('restaurante.sedes_page') }}">Sedes</a>
+          <a href="{{ url_for('restaurante.equipo_page') }}">Equipo</a>
+        {% endif %}
+      {% endif %}
+    </nav>
+    <div class="barra__usuario">
+      {% if usuario.sede %}
+        {% if usuario.rol == 'Admin' %}
+          <a class="chip" href="{{ url_for('auth.seleccionar_sede') }}" title="Cambiar de sede">{{ usuario.sede }}</a>
+        {% else %}
+          <span class="chip">{{ usuario.sede }}</span>
+        {% endif %}
+      {% endif %}
+      <span class="muted">{{ usuario.nombre }} · {{ usuario.rol }}</span>
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button class="btn-link" type="submit">Salir</button>
+      </form>
+    </div>
+  </header>
+  {% if tienda_vencida %}
+    <p class="banda banda--error">Tu suscripción venció. La cuenta queda en modo lectura hasta renovar.</p>
+  {% elif dias_suscripcion is not none and dias_suscripcion <= 5 %}
+    <p class="banda">Tu suscripción vence en {{ dias_suscripcion }} día{{ '' if dias_suscripcion == 1 else 's' }}.</p>
+  {% endif %}
+  <main class="contenido">
+    {% include "_flashes.html" %}
+    <p class="aviso" id="mensaje" role="status" hidden></p>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

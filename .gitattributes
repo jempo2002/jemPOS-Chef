@@ -1,0 +1,8 @@
+# El Procfile lo ejecuta Linux (Railway). Si se guardara con finales de linea
+# de Windows, el \r final quedaria pegado al ultimo argumento del comando y
+# gunicorn arrancaria mal o no arrancaria.
+#
+# Aqui se fuerza LF en el repositorio para que no dependa del core.autocrlf
+# que tenga configurado cada maquina.
+Procfile text eol=lf
+*.sh text eol=lf

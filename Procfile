@@ -1,0 +1,1 @@
+web: gunicorn run:app --bind 0.0.0.0:$PORT --worker-class gthread --workers ${WEB_CONCURRENCY:-4} --threads ${GUNICORN_THREADS:-4} --max-requests 2000 --max-requests-jitter 200 --worker-tmp-dir /dev/shm --access-logfile - --error-logfile -

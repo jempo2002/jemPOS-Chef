@@ -1,0 +1,23 @@
+{% extends "auth/_base_auth.html" %}
+{% block title %}Elegir sede{% endblock %}
+{% block content %}
+<h1>¿En qué sede vas a trabajar?</h1>
+<p class="muted">Puedes cambiarla luego desde el menú.</p>
+{% if sedes %}
+<form method="post" class="lista-sedes">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  {% for s in sedes %}
+  <button class="sede-opcion{% if s.id_sede == sede_actual %} sede-opcion--actual{% endif %}" type="submit" name="id_sede" value="{{ s.id_sede }}">
+    <strong>{{ s.nombre }}</strong>{% if s.es_principal %} <span class="chip">Principal</span>{% endif %}
+    {% if s.direccion %}<small>{{ s.direccion }}</small>{% endif %}
+  </button>
+  {% endfor %}
+</form>
+{% else %}
+<p class="aviso aviso--error">El restaurante no tiene sedes activas. Escríbenos para revisarlo.</p>
+{% endif %}
+<form method="post" action="{{ url_for('auth.logout') }}" class="pie">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <button class="btn-link" type="submit">Cerrar sesión</button>
+</form>
+{% endblock %}
