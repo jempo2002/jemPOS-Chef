@@ -1,7 +1,7 @@
 """Sedes de un restaurante: alta con tope del plan, edicion y soft delete."""
 from __future__ import annotations
 
-from mysql.connector import IntegrityError
+from mysql.connector import Error as MySQLError, IntegrityError
 
 from app.services import plan_service
 from app.utils.helpers import ahora_local, normalize_phone
@@ -9,6 +9,9 @@ from app.utils.validation import sanitize_optional_text, sanitize_text
 from database import get_db
 
 _NOMBRE_DUPLICADO = "Ya existe una sede activa con ese nombre."
+# SIGNAL de los triggers de migrations/2026-10-07_sedes_planes_roles.sql.
+ERRNO_TRIGGER = 1644
+_LIMITE_BASE = "El plan no admite más sedes."
 
 
 class SedeError(Exception):
@@ -33,6 +36,7 @@ def resumen_sedes(id_tienda: int) -> dict:
         plan_id = plan_service.normalizar_plan((cur.fetchone() or {}).get("plan_id"))
         cur.execute(
             "SELECT s.id_sede, s.nombre, s.direccion, s.telefono, s.es_principal, "
+            "s.costo_montaje, s.montaje_pagado, "
             "(SELECT COUNT(*) FROM usuarios u WHERE u.id_sede = s.id_sede AND u.estado_activo = 1) AS usuarios "
             "FROM sedes s WHERE s.id_tienda = %s AND s.estado = 'Activa' "
             "ORDER BY s.es_principal DESC, s.nombre",
@@ -49,22 +53,29 @@ def resumen_sedes(id_tienda: int) -> dict:
         "plan_id": plan_id,
         "plan_nombre": plan["nombre"],
         "sede_extra": plan["sede_extra"],
-        "puede_crear": tope is None or n < tope,
+        "max_sedes": tope,
+        "puede_crear": n < tope,
+        "multisede": plan_service.tiene_funcion(plan_id, "multisede"),
+        "costo_montaje": plan_service.COSTO_MONTAJE_SEDE,
         "sedes_extra": plan_service.sedes_extra(plan_id, n),
         "mensualidad": plan_service.mensualidad(plan_id, n),
     }
 
 
 def crear_sede(id_tienda: int, data: dict) -> int:
-    """Lanza ValueError (datos), LimitePlanError (tope) o SedeError."""
+    """Lanza ValueError (datos), LimitePlanError (tope) o SedeError.
+
+    La sede nace con su montaje pendiente (COSTO_MONTAJE_SEDE): el Master lo
+    marca pagado en su panel cuando lo recibe."""
     nombre, direccion, telefono = _campos(data)
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
         plan_service.verificar_limite(cur, id_tienda, "sedes")
         cur.execute(
-            "INSERT INTO sedes (id_tienda, nombre, direccion, telefono) VALUES (%s, %s, %s, %s)",
-            (id_tienda, nombre, direccion, telefono),
+            "INSERT INTO sedes (id_tienda, nombre, direccion, telefono, costo_montaje) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (id_tienda, nombre, direccion, telefono, plan_service.COSTO_MONTAJE_SEDE),
         )
         id_sede = cur.lastrowid
         conn.commit()
@@ -72,6 +83,11 @@ def crear_sede(id_tienda: int, data: dict) -> int:
     except IntegrityError as exc:
         conn.rollback()
         raise SedeError(_NOMBRE_DUPLICADO, 409) from exc
+    except MySQLError as exc:
+        conn.rollback()
+        if exc.errno == ERRNO_TRIGGER:
+            raise SedeError(_LIMITE_BASE, 409) from exc
+        raise
     except Exception:
         conn.rollback()
         raise

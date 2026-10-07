@@ -31,15 +31,31 @@ def test_crear_restaurante_con_sede_y_admin(client, crear):
     assert entrar(nuevo, "ana@chef.co").location.endswith("/inicio")
 
 
-def test_bajar_de_cadena_con_varias_sedes_se_bloquea(client, crear):
+def test_bajar_a_basico_con_varias_sedes_se_bloquea(client, crear):
     _master(client, crear)
     id_tienda, _ = crear.tienda("cadena", sedes=("Centro", "Norte"))
-    r = client.put(f"/api/master/restaurantes/{id_tienda}/plan", json={"plan_id": "completo"})
+    assert client.put(f"/api/master/restaurantes/{id_tienda}/plan", json={"plan_id": "completo"}).status_code == 200
+    r = client.put(f"/api/master/restaurantes/{id_tienda}/plan", json={"plan_id": "basico"})
     assert r.status_code == 400 and "sedes" in r.get_json()["msg"]
     crear.fila("UPDATE sedes SET estado = 'Eliminada' WHERE nombre = 'Norte'")
-    r = client.put(f"/api/master/restaurantes/{id_tienda}/plan", json={"plan_id": "completo"})
+    r = client.put(f"/api/master/restaurantes/{id_tienda}/plan", json={"plan_id": "basico"})
     assert r.status_code == 200
     assert client.put(f"/api/master/restaurantes/{id_tienda}/plan", json={"plan_id": "factura"}).status_code == 400
+
+
+def test_montaje_pendiente_y_cobrado(client, crear):
+    _master(client, crear)
+    id_tienda, _ = crear.tienda("completo")
+    crear.fila(
+        "INSERT INTO sedes (id_tienda, nombre, costo_montaje) VALUES (%s, 'Norte', 79000)", (id_tienda,)
+    )
+    pagina = client.get("/panel-master").get_data(as_text=True)
+    assert "Montaje pendiente $79.000" in pagina
+    assert "$103.500" in pagina  # 69.000 + 34.500
+    r = client.post(f"/api/master/restaurantes/{id_tienda}/montaje")
+    assert r.status_code == 200 and "$79.000" in r.get_json()["msg"]
+    assert client.post(f"/api/master/restaurantes/{id_tienda}/montaje").status_code == 404
+    assert "Montaje pendiente" not in client.get("/panel-master").get_data(as_text=True)
 
 
 def test_renovar_suma_desde_el_vencimiento(client, crear):

@@ -11,19 +11,48 @@ def _admin(client, crear, plan, sedes=("Principal",)):
     return id_tienda, ids
 
 
-def test_completo_no_abre_segunda_sede(client, crear):
-    _admin(client, crear, "completo")
+def test_basico_no_abre_segunda_sede(client, crear):
+    _admin(client, crear, "basico")
     r = client.post("/api/sedes", json={"nombre": "Norte"})
     assert r.status_code == 403
     assert r.get_json()["code"] == "limite_plan"
 
 
-def test_cadena_abre_sedes_y_cobra_la_extra(client, crear):
+def test_completo_abre_hasta_cuatro_sedes_con_montaje(client, crear):
+    id_tienda, _ = _admin(client, crear, "completo")
+    for nombre in ("Norte", "Sur", "Oriente"):
+        assert client.post("/api/sedes", json={"nombre": nombre}).status_code == 201
+    r = client.post("/api/sedes", json={"nombre": "Quinta"})
+    assert r.status_code == 403 and "corporativo" in r.get_json()["msg"]
+    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code in (403, 409)
+    pagina = client.get("/sedes").get_data(as_text=True)
+    assert "$172.500" in pagina  # 69.000 + 3 x 34.500
+    fila = crear.fila(
+        "SELECT SUM(costo_montaje) AS total, SUM(montaje_pagado) AS pagadas FROM sedes WHERE id_tienda = %s",
+        (id_tienda,),
+    )
+    assert int(fila["total"]) == 3 * 79000 and int(fila["pagadas"]) == 0
+
+
+def test_nombre_de_sede_repetido(client, crear):
     _admin(client, crear, "cadena")
     assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 201
-    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 409  # nombre repetido
-    pagina = client.get("/sedes").get_data(as_text=True)
-    assert "$148.000" in pagina  # 99.000 + una sede extra de 49.000
+    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 409
+
+
+def test_la_base_rechaza_una_quinta_sede_y_basico_con_varias(crear, db):
+    import mysql.connector
+    import pytest
+
+    id_tienda, _ = crear.tienda("cadena", sedes=("A", "B", "C", "D"))
+    with pytest.raises(mysql.connector.Error) as exc:
+        crear.sede(id_tienda, "E")
+    assert exc.value.errno == 1644
+    with pytest.raises(mysql.connector.Error):
+        db.cursor().execute("UPDATE tiendas SET plan_id = 'basico' WHERE id_tienda = %s", (id_tienda,))
+    basico, _ = crear.tienda("basico", nombre="Uno")
+    with pytest.raises(mysql.connector.Error):
+        crear.sede(basico, "Segunda")
 
 
 def test_eliminar_sede_es_soft_delete(client, crear):

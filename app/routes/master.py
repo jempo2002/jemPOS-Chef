@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, render_template, request
 
 from app.services import master_service, plan_service
 from app.utils.decorators import login_required, roles_required
-from app.utils.helpers import hoy_local
+from app.utils.helpers import fmt_money, hoy_local
 
 master = Blueprint("master", __name__)
 
@@ -27,6 +27,7 @@ def panel():
         planes=plan_service.PLANES,
         periodos=master_service.PERIODOS,
         mrr=sum(r["mensualidad"] for r in restaurantes if not r["en_prueba"]),
+        montajes=sum(r["montaje_pendiente"] for r in restaurantes),
         hoy=hoy_local(),
     )
 
@@ -51,6 +52,17 @@ def api_plan(id_tienda):
     except _ERRORES as exc:
         return _error(exc)
     return jsonify({"ok": True, "msg": f"Plan cambiado a {plan_service.PLANES[plan_id]['nombre']}."})
+
+
+@master.post("/api/master/restaurantes/<int:id_tienda>/montaje")
+@login_required
+@roles_required("Master")
+def api_montaje(id_tienda):
+    try:
+        total = master_service.marcar_montajes_pagados(id_tienda)
+    except _ERRORES as exc:
+        return _error(exc)
+    return jsonify({"ok": True, "msg": f"Montaje cobrado: {fmt_money(total)}."})
 
 
 @master.post("/api/master/restaurantes/<int:id_tienda>/renovar")

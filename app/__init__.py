@@ -103,6 +103,10 @@ def create_app() -> Flask:
     app.register_blueprint(master)
     app.register_blueprint(restaurante)
 
+    from app.utils.helpers import fmt_money
+
+    app.add_template_filter(fmt_money, "pesos")
+
     @app.context_processor
     def _contexto_sesion():
         # Lo deja login_required en `g`; paginas publicas: sin aviso ni bloqueo.

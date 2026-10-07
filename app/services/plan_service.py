@@ -3,10 +3,16 @@
 Fuente unica de precios, topes y funciones por plan. Los precios son los del
 landing (index.html, seccion #planes), en COP por mes:
 
-  Basico   $49.000  1 sede   mesas, propina, caja y turnos
-  Completo $69.000  1 sede   + pantalla de cocina, cuenta dividida, recetas
-  Cadena   $99.000  1 sede incluida, cada sede extra $49.000/mes
-                             + varias sedes y factura electronica
+  Basico   $49.000  mesas, propina, caja y turnos. Una sola sede.
+  Completo $69.000  + pantalla de cocina, cuenta dividida, recetas, multisede
+  Cadena   $99.000  + factura electronica, multisede
+
+Multisede (reglas de jempo, 2026-10-07): solo Completo y Cadena, hasta
+MAX_SEDES sedes activas (mas sedes = un futuro Plan Corporativo). Cada sede
+extra paga cada mes el 50 % del plan (Completo $34.500, Cadena $49.500) y,
+una sola vez, el montaje de COSTO_MONTAJE_SEDE (capacitacion y levantamiento
+de inventario inicial). La base lo refuerza con triggers
+(migrations/2026-10-07_multisede_reglas.sql).
 
 plan_id NULL (no deberia pasar: el Master siempre elige plan) se trata como
 Basico, el plan mas restringido, para que un dato faltante nunca abra
@@ -23,32 +29,36 @@ WHATSAPP = "https://wa.me/573106152268"
 
 PLAN_POR_DEFECTO = "basico"
 
+MAX_SEDES = 4
+COSTO_MONTAJE_SEDE = 79000
+# Mensualidad de cada sede extra como fraccion del precio del plan.
+FRACCION_SEDE_EXTRA = 0.5
+
 PLANES: dict[str, dict] = {
     "basico": {
         "nombre": "Básico",
         "precio": 49000,
-        "sedes_incluidas": 1,
-        "sede_extra": None,  # None = no admite sedes extra
         "usuarios_por_sede": 4,
         "funciones": frozenset(),
     },
     "completo": {
         "nombre": "Completo",
         "precio": 69000,
-        "sedes_incluidas": 1,
-        "sede_extra": None,
         "usuarios_por_sede": 8,
-        "funciones": frozenset({"cocina", "cuenta_dividida", "recetas"}),
+        "funciones": frozenset({"cocina", "cuenta_dividida", "recetas", "multisede"}),
     },
     "cadena": {
         "nombre": "Cadena",
         "precio": 99000,
-        "sedes_incluidas": 1,
-        "sede_extra": 49000,
         "usuarios_por_sede": 8,
         "funciones": frozenset({"cocina", "cuenta_dividida", "recetas", "multisede", "factura"}),
     },
 }
+for _plan in PLANES.values():
+    _multisede = "multisede" in _plan["funciones"]
+    _plan["max_sedes"] = MAX_SEDES if _multisede else 1
+    # Pesos enteros: 69.000 -> 34.500, 99.000 -> 49.500.
+    _plan["sede_extra"] = round(_plan["precio"] * FRACCION_SEDE_EXTRA) if _multisede else None
 PLANES_VALIDOS = tuple(PLANES)
 
 # Para el mensaje de "esta funcion no viene en tu plan".
@@ -66,9 +76,9 @@ _SIGUIENTE = {
         "Pantalla de cocina",
         "Cuenta dividida",
         "Recetas e inventario de ingredientes",
+        f"Hasta {MAX_SEDES} sedes",
     )),
     "completo": ("cadena", (
-        "Varias sedes (cada sede extra $49.000/mes)",
         "Factura electrónica DIAN",
     )),
 }
@@ -86,10 +96,9 @@ def tiene_funcion(plan_id: str | None, funcion: str) -> bool:
     return funcion in plan_de(plan_id)["funciones"]
 
 
-def tope_sedes(plan_id: str | None) -> int | None:
-    """Maximo de sedes activas; None = sin tope (se cobran las extra)."""
-    plan = plan_de(plan_id)
-    return None if plan["sede_extra"] else plan["sedes_incluidas"]
+def tope_sedes(plan_id: str | None) -> int:
+    """Maximo de sedes activas: 1 en Basico, MAX_SEDES con multisede."""
+    return plan_de(plan_id)["max_sedes"]
 
 
 def tope_usuarios(plan_id: str | None, sedes_activas: int) -> int:
@@ -98,11 +107,13 @@ def tope_usuarios(plan_id: str | None, sedes_activas: int) -> int:
 
 
 def sedes_extra(plan_id: str | None, sedes_activas: int) -> int:
-    return max(0, int(sedes_activas) - plan_de(plan_id)["sedes_incluidas"])
+    """Sedes por encima de la principal (la unica incluida en el precio)."""
+    return max(0, int(sedes_activas) - 1)
 
 
 def mensualidad(plan_id: str | None, sedes_activas: int) -> int:
-    """Lo que paga el restaurante al mes: plan + sedes extra (solo Cadena)."""
+    """Lo que paga el restaurante al mes: plan + 50 % del plan por sede extra.
+    Completo con 2 sedes: 69.000 + 34.500 = 103.500."""
     plan = plan_de(plan_id)
     return plan["precio"] + sedes_extra(plan_id, sedes_activas) * (plan["sede_extra"] or 0)
 
@@ -110,9 +121,16 @@ def mensualidad(plan_id: str | None, sedes_activas: int) -> int:
 def _mensaje(recurso: str, plan_id: str, tope: int) -> str:
     nombre = plan_de(plan_id)["nombre"]
     if recurso == "sedes":
+        if tope >= MAX_SEDES:
+            return (
+                f"Llegaste al máximo de {MAX_SEDES} sedes. Para más sedes escríbenos: "
+                "lo manejamos con un plan corporativo."
+            )
+        completo = PLANES["completo"]
         return (
-            f"Tu Plan {nombre} incluye {tope} sede. Para abrir más sedes pásate "
-            f"al Plan Cadena (cada sede extra cuesta $49.000 al mes)."
+            f"Tu Plan {nombre} es para una sola sede. Con el Plan Completo puedes tener "
+            f"hasta {MAX_SEDES} (cada sede extra suma ${completo['sede_extra']:,} al mes "
+            f"y un montaje único de ${COSTO_MONTAJE_SEDE:,}).".replace(",", ".")
         )
     base = f"Tu Plan {nombre} permite {tope} usuarios activos."
     siguiente = _SIGUIENTE.get(plan_id)
@@ -133,12 +151,17 @@ class LimitePlanError(Exception):
         """Cuerpo JSON + 403. `code` le dice al front que muestre el aviso de
         cambio de plan en vez del error normal."""
         actual = plan_de(self.plan_id)["nombre"]
-        destino = "cadena" if self.recurso == "sedes" else (_SIGUIENTE.get(self.plan_id) or (None,))[0]
+        if self.recurso == "sedes":
+            # Basico -> Completo; con multisede ya esta en el tope de sedes.
+            destino = None if "multisede" in plan_de(self.plan_id)["funciones"] else "completo"
+        else:
+            destino = (_SIGUIENTE.get(self.plan_id) or (None,))[0]
         if destino:
             texto = f"Hola, tengo el Plan {actual} de jemPOS Chef y quiero pasarme al Plan {PLANES[destino]['nombre']}."
             cta = f"Pasarme al Plan {PLANES[destino]['nombre']}"
         else:
-            texto = f"Hola, tengo el Plan {actual} de jemPOS Chef y necesito más usuarios."
+            falta = "más sedes" if self.recurso == "sedes" else "más usuarios"
+            texto = f"Hola, tengo el Plan {actual} de jemPOS Chef y necesito {falta}."
             cta = "Escribirnos por WhatsApp"
         return {
             "ok": False,
@@ -181,7 +204,7 @@ def verificar_limite(cur, id_tienda: int, recurso: str) -> None:
     sedes = _contar_sedes(cur, id_tienda)
     if recurso == "sedes":
         tope = tope_sedes(plan_id)
-        if tope is not None and sedes >= tope:
+        if sedes >= tope:
             raise LimitePlanError("sedes", plan_id, tope)
         return
     if recurso == "usuarios":
@@ -205,7 +228,7 @@ def verificar_cambio_plan(cur, id_tienda: int, plan_nuevo: str) -> None:
     sedes = _contar_sedes(cur, id_tienda)
     tope = tope_sedes(plan_nuevo)
     nombre = PLANES[plan_nuevo]["nombre"]
-    if tope is not None and sedes > tope:
+    if sedes > tope:
         raise ValueError(
             f"El restaurante tiene {sedes} sedes activas y el Plan {nombre} permite {tope}. "
             "Elimina las sedes de sobra antes de cambiar de plan."

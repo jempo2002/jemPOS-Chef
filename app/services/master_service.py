@@ -8,7 +8,7 @@ from __future__ import annotations
 import calendar
 from datetime import date
 
-from mysql.connector import IntegrityError
+from mysql.connector import Error as MySQLError, IntegrityError
 from werkzeug.security import generate_password_hash
 
 from app.services import plan_service
@@ -18,6 +18,7 @@ from app.services.auth_service import (
     is_valid_email,
     liberar_datos_inactivos,
 )
+from app.services.sede_service import ERRNO_TRIGGER
 from app.services.usuario_service import _parse_cc
 from app.utils.helpers import ahora_local, hoy_local, normalize_phone
 from app.utils.validation import sanitize_optional_text, sanitize_text
@@ -55,7 +56,10 @@ def listar_restaurantes() -> list[dict]:
             "SELECT t.id_tienda, t.nombre_negocio, t.nit, t.telefono, t.plan_id, "
             "t.fecha_fin_suscripcion, t.trial_ends_at, "
             "(SELECT COUNT(*) FROM sedes s WHERE s.id_tienda = t.id_tienda AND s.estado = 'Activa') AS sedes, "
-            "(SELECT COUNT(*) FROM usuarios u WHERE u.id_tienda = t.id_tienda AND u.estado_activo = 1) AS usuarios "
+            "(SELECT COUNT(*) FROM usuarios u WHERE u.id_tienda = t.id_tienda AND u.estado_activo = 1) AS usuarios, "
+            # Montajes de sedes activas aun no cobrados (pago unico por sede).
+            "(SELECT COALESCE(SUM(s.costo_montaje), 0) FROM sedes s WHERE s.id_tienda = t.id_tienda "
+            "AND s.estado = 'Activa' AND s.montaje_pagado = 0) AS montaje_pendiente "
             "FROM tiendas t WHERE t.estado <> 'Eliminado' ORDER BY t.nombre_negocio"
         )
         filas = cur.fetchall()
@@ -65,6 +69,7 @@ def listar_restaurantes() -> list[dict]:
     for f in filas:
         f["plan_nombre"] = plan_service.plan_de(f["plan_id"])["nombre"]
         f["mensualidad"] = plan_service.mensualidad(f["plan_id"], f["sedes"])
+        f["montaje_pendiente"] = int(f["montaje_pendiente"])
         f["en_prueba"] = f["fecha_fin_suscripcion"] is None and f["trial_ends_at"] is not None
         f["vence"] = f["fecha_fin_suscripcion"] or f["trial_ends_at"]
         f["dias"] = (f["vence"] - hoy).days if f["vence"] else None
@@ -143,6 +148,39 @@ def cambiar_plan(id_tienda: int, raw_plan) -> str:
         cur.execute("UPDATE tiendas SET plan_id = %s WHERE id_tienda = %s", (plan_id, id_tienda))
         conn.commit()
         return plan_id
+    except MySQLError as exc:
+        conn.rollback()
+        if exc.errno == ERRNO_TRIGGER:  # respaldo de la base: varias sedes en Basico
+            raise MasterError("El plan no admite las sedes activas del restaurante.", 409) from exc
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def marcar_montajes_pagados(id_tienda: int) -> int:
+    """Marca cobrados los montajes pendientes de las sedes activas. Devuelve
+    cuanto se cobro."""
+    conn = get_db()
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT COALESCE(SUM(costo_montaje), 0) AS total FROM sedes "
+            "WHERE id_tienda = %s AND estado = 'Activa' AND montaje_pagado = 0 AND costo_montaje > 0 FOR UPDATE",
+            (id_tienda,),
+        )
+        total = int(cur.fetchone()["total"])
+        if not total:
+            raise MasterError("No hay montajes pendientes.", 404)
+        cur.execute(
+            "UPDATE sedes SET montaje_pagado = 1, fecha_pago_montaje = %s "
+            "WHERE id_tienda = %s AND estado = 'Activa' AND montaje_pagado = 0 AND costo_montaje > 0",
+            (ahora_local(), id_tienda),
+        )
+        conn.commit()
+        return total
     except Exception:
         conn.rollback()
         raise

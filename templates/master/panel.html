@@ -2,7 +2,7 @@
 {% block title %}Restaurantes{% endblock %}
 {% block content %}
 <h1>Restaurantes</h1>
-<p class="muted">{{ restaurantes|length }} restaurante{{ '' if restaurantes|length == 1 else 's' }} · Ingreso mensual de los que ya pagan: ${{ '{:,}'.format(mrr).replace(',', '.') }}</p>
+<p class="muted">{{ restaurantes|length }} restaurante{{ '' if restaurantes|length == 1 else 's' }} · Ingreso mensual de los que ya pagan: {{ mrr|pesos }}{% if montajes %} · Montajes de sedes por cobrar: {{ montajes|pesos }}{% endif %}</p>
 
 <section class="tarjeta">
   <table class="tabla">
@@ -21,7 +21,15 @@
         </td>
         <td>{{ r.sedes }}</td>
         <td>{{ r.usuarios }}</td>
-        <td>${{ '{:,}'.format(r.mensualidad).replace(',', '.') }}</td>
+        <td>
+          {{ r.mensualidad|pesos }}
+          {% if r.montaje_pendiente %}
+            <br /><small class="muted">Montaje pendiente {{ r.montaje_pendiente|pesos }}</small>
+            <button class="btn-link" type="button"
+                    data-api="POST {{ url_for('master.api_montaje', id_tienda=r.id_tienda) }}"
+                    data-confirmar="¿Registrar el pago del montaje de {{ r.montaje_pendiente|pesos }}?">Marcar pagado</button>
+          {% endif %}
+        </td>
         <td>
           {% if r.vence %}{{ r.vence.strftime('%d/%m/%Y') }}{% else %}Sin fecha{% endif %}
           {% if r.en_prueba %}<span class="chip">Prueba</span>{% endif %}
@@ -53,7 +61,7 @@
     <label>Teléfono <input name="telefono" maxlength="20" inputmode="tel" /></label>
     <label>Plan
       <select name="plan_id">
-        {% for pid, p in planes.items() %}<option value="{{ pid }}" {% if pid == 'completo' %}selected{% endif %}>{{ p.nombre }} · ${{ '{:,}'.format(p.precio).replace(',', '.') }}</option>{% endfor %}
+        {% for pid, p in planes.items() %}<option value="{{ pid }}" {% if pid == 'completo' %}selected{% endif %}>{{ p.nombre }} · {{ p.precio|pesos }}</option>{% endfor %}
       </select>
     </label>
     <label>Sede principal <input name="sede_nombre" maxlength="120" placeholder="Principal" /></label>

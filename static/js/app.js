@@ -1,6 +1,6 @@
 /* jemPOS Chef: formularios y botones que llaman a la API.
  *
- *   <form data-api="POST /api/sedes">       envia los campos como JSON
+ *   <form data-api="POST /api/sedes" data-confirmar="...">  envia los campos como JSON
  *   <button data-api="DELETE /api/sedes/3" data-confirmar="...">
  *
  * Sin JS inline (la CSP lo bloquea). Con ok recarga la pagina; con error
@@ -65,6 +65,7 @@
     var form = ev.target;
     if (!form.dataset || !form.dataset.api) return;
     ev.preventDefault();
+    if (form.dataset.confirmar && !window.confirm(form.dataset.confirmar)) return;
     var datos = {};
     new FormData(form).forEach(function (v, k) { datos[k] = v; });
     llamar(form.dataset.api, datos, form.querySelector('[type="submit"]'));
