@@ -23,3 +23,33 @@ backups/
 logs/
 *.log
 dump.rdb
+
+# Bases locales sueltas y volcados con nombre propio: datos reales y hashes.
+*.db
+*.sqlite
+*.sqlite3
+dumps/
+*.sql.zip
+*.bak
+
+# Llaves y certificados.
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Archivos que sube el usuario (fotos, logos): datos del cliente.
+static/uploads/
+
+# Configuracion local de editores y asistentes (rutas del equipo, permisos).
+.claude/
+.vscode/
+.idea/
+
+# Pruebas y empaquetado.
+.coverage
+htmlcov/
+*.egg-info/
+
+Thumbs.db
+desktop.ini
