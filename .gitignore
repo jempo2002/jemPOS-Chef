@@ -53,3 +53,22 @@ htmlcov/
 
 Thumbs.db
 desktop.ini
+
+# Volcados .sql sueltos (mysqldump de produccion): solo viaja la estructura.
+*.sql
+!db/schema.sql
+!migrations/*.sql
+
+# Exportaciones (ventas, inventario, clientes) y archivos subidos en la raiz.
+exports/
+uploads/
+*.csv
+*.xlsx
+*.xls
+
+# Credenciales en JSON y CLIs de despliegue (tokens, proyecto enlazado).
+credentials*.json
+service-account*.json
+secrets/
+.railway/
+.wrangler/
