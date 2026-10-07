@@ -529,14 +529,25 @@
       li.appendChild(prop);
       var metodo = el('select');
       metodo.setAttribute('aria-label', 'Método de pago de ' + p.etiqueta);
-      [['efectivo', 'Efectivo'], ['nequi', 'Nequi / transferencia'], ['tarjeta', 'Tarjeta']].forEach(function (m) {
+      [['efectivo', 'Efectivo'], ['nequi', 'Nequi / transferencia'], ['tarjeta', 'Tarjeta'], ['mixto', 'Mixto']].forEach(function (m) {
         var o = el('option', '', m[1]);
         o.value = m[0];
         o.selected = p.metodo === m[0];
         metodo.appendChild(o);
       });
-      metodo.addEventListener('change', function () { p.metodo = metodo.value; });
+      metodo.addEventListener('change', function () { p.metodo = metodo.value; pintarDivision(); });
       li.appendChild(metodo);
+      if (p.metodo === 'mixto') {
+        // Lo que da en efectivo; el resto de su parte va por transferencia.
+        var efe = el('input');
+        efe.inputMode = 'numeric';
+        efe.value = p.efectivo || '';
+        efe.placeholder = 'Efectivo';
+        efe.setAttribute('aria-label', 'Efectivo de ' + p.etiqueta);
+        efe.addEventListener('change', function () { p.efectivo = numero(efe.value); pintarDivision(); });
+        li.appendChild(efe);
+        li.appendChild(el('small', 'muted', 'transf. ' + Chef.pesos(Math.max(0, monto + propina - (p.efectivo || 0)))));
+      }
       li.appendChild(el('strong', '', '= ' + Chef.pesos(monto + propina)));
       if (division.partes.length > 2 && division.modo === 'items') {
         li.appendChild(boton('Quitar', 'btn-link btn-link--peligro', function () {
@@ -568,6 +579,7 @@
       id_pedido: detalle.pedido.id_pedido,
       partes: division.partes.map(function (p, idx) {
         var parte = { etiqueta: p.etiqueta, metodo: p.metodo, propina: propinaDe(p) };
+        if (p.metodo === 'mixto') parte.monto_efectivo = p.efectivo || 0;
         if (division.modo === 'items') {
           parte.items = Object.keys(p.items).map(function (id) { return { id_item: Number(id), cantidad: p.items[id] }; });
         }

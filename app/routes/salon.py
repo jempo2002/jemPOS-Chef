@@ -526,6 +526,18 @@ def api_caja_abrir():
     return _ok(201, msg="Caja abierta.")
 
 
+@salon.post("/api/caja/gastos")
+@login_required
+@roles_required(*CAJA)
+def api_caja_gasto():
+    id_tienda, id_sede, id_usuario = _ctx()
+    try:
+        gasto = caja_service.registrar_gasto(id_tienda, id_sede, id_usuario, _json())
+    except _ERRORES as exc:
+        return _error(exc)
+    return _ok(201, msg="Gasto registrado.", gasto=gasto)
+
+
 @salon.post("/api/caja/cerrar")
 @login_required
 @roles_required(*CAJA)

@@ -54,9 +54,9 @@ PROPINA_SUGERIDA = Decimal("0.10")
 _UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _ACTIVOS = ("abierto", "por_cobrar")
 MAX_PARTES = 20
-# Metodos que puede usar cada parte de una cuenta dividida (sin mixto: una
-# persona paga con una sola cosa).
-METODOS_PARTE = ("efectivo", "nequi", "transferencia", "tarjeta")
+# Metodos que puede usar cada parte de una cuenta dividida. En mixto la parte
+# dice cuanto da en efectivo y el resto va por transferencia.
+METODOS_PARTE = ("efectivo", "nequi", "transferencia", "tarjeta", "mixto")
 # Lo que manda la pantalla -> ventas.metodo_pago
 METODOS = {
     "efectivo": "Efectivo",
@@ -787,6 +787,10 @@ def _partes_validas(data: dict) -> tuple[str, list[dict]]:
             "etiqueta": sanitize_optional_text(parte.get("etiqueta"), "El nombre de la cuenta", max_len=40) or f"Cuenta {n}",
             "metodo": METODOS[metodo],
             "propina": _propina(parte.get("propina")),
+            "efectivo_mixto": (
+                _pesos(parse_float(parte.get("monto_efectivo"), "El efectivo", min_value=0, allow_zero=False))
+                if metodo == "mixto" else None
+            ),
             "items": {},
         }
         if modo == "items":
@@ -806,12 +810,27 @@ def _partes_validas(data: dict) -> tuple[str, list[dict]]:
     return modo, limpias
 
 
+def _pago_parte(parte: dict, a_pagar: Decimal) -> tuple[Decimal | None, Decimal | None]:
+    """(efectivo, transferencia) de una parte Mixto; (None, None) si no lo es.
+    El efectivo tiene que dejar algo por transferencia."""
+    if parte["metodo"] != "Mixto":
+        return None, None
+    efectivo = parte["efectivo_mixto"]
+    if efectivo >= a_pagar:
+        raise ValueError(
+            f"En {parte['etiqueta']} el efectivo debe ser menor que ${int(a_pagar):,}; "
+            "si paga todo en efectivo elige Efectivo.".replace(",", ".")
+        )
+    return efectivo, a_pagar - efectivo
+
+
 def _cobro_dividido_repetido(cur, id_tienda: int, uuid: str) -> dict | None:
     venta = _venta_por_uuid(cur, id_tienda, uuid)
     if not venta:
         return None
     cur.execute(
-        "SELECT c.numero, c.etiqueta, c.monto, c.propina, c.metodo_pago, c.id_venta, v.numero_venta "
+        "SELECT c.numero, c.etiqueta, c.monto, c.propina, c.metodo_pago, c.monto_efectivo, c.monto_transferencia, "
+        "c.id_venta, v.numero_venta "
         "FROM pedido_cuentas c JOIN ventas v ON v.id_venta = c.id_venta WHERE c.id_pedido = %s ORDER BY c.numero",
         (venta["id_pedido"],),
     )
@@ -827,6 +846,8 @@ def _parte_json(parte: dict) -> dict:
         "propina": float(parte["propina"]),
         "a_pagar": float(Decimal(parte["monto"]) + Decimal(parte["propina"])),
         "metodo_pago": parte["metodo_pago"],
+        "monto_efectivo": None if parte.get("monto_efectivo") is None else float(parte["monto_efectivo"]),
+        "monto_transferencia": None if parte.get("monto_transferencia") is None else float(parte["monto_transferencia"]),
         "id_venta": parte["id_venta"],
         "numero_venta": parte["numero_venta"],
     }
@@ -841,9 +862,11 @@ def cobrar_dividido(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa |
 
     modo 'iguales': el total se parte en N montos (los pesos que sobran van a
     las primeras partes) y se registra UNA venta con los items reales. Si
-    todas pagan igual, ese es el metodo; si mezclan, la venta queda Mixto:
-    efectivo lo de las partes en efectivo y transferencia el resto (Nequi,
-    Daviplata o tarjeta). Cada parte queda en pedido_cuentas con su metodo.
+    todas pagan igual, ese es el metodo; si mezclan (o alguna paga Mixto), la
+    venta queda Mixto: efectivo lo de las partes en efectivo mas la parte en
+    efectivo de las Mixto, y transferencia el resto (Nequi, Daviplata o
+    tarjeta). Cada parte queda en pedido_cuentas con su metodo y, si es Mixto,
+    con lo que dio en efectivo y por transferencia.
     """
     uuid = _uuid(data.get("uuid"))
     modo, partes = _partes_validas(data)
@@ -858,6 +881,7 @@ def cobrar_dividido(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa |
         titulo = sitio["titulo"]
         por_item = {l["id_item"]: l for l in lineas}
         filas = []  # (parte, monto, id_venta, numero_venta)
+        pagos = {}  # numero de parte -> (efectivo, transferencia) si es Mixto
 
         if modo == "items":
             repartido: dict[int, Decimal] = defaultdict(Decimal)
@@ -877,9 +901,10 @@ def cobrar_dividido(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa |
                 monto = sum((_pesos(Decimal(c) * Decimal(p)) for _, c, p in items), Decimal(0))
                 if parte["propina"] > monto:
                     raise ValueError(f"La propina de {parte['etiqueta']} no puede ser mayor que su cuenta.")
+                efectivo, transferencia = pagos[parte["numero"]] = _pago_parte(parte, monto + parte["propina"])
                 venta = _registrar_venta(
                     cur, id_tienda, id_sede, id_usuario, turno, pedido, items, parte["propina"], parte["metodo"],
-                    None, None, uuid if parte["numero"] == 1 else None, f"{titulo} · {parte['etiqueta']}",
+                    efectivo, transferencia, uuid if parte["numero"] == 1 else None, f"{titulo} · {parte['etiqueta']}",
                 )
                 filas.append((parte, monto, venta["id_venta"], venta["numero_venta"]))
         else:
@@ -889,13 +914,19 @@ def cobrar_dividido(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa |
             for parte, monto in zip(partes, montos):
                 if parte["propina"] > monto:
                     raise ValueError(f"La propina de {parte['etiqueta']} no puede ser mayor que su parte.")
+                pagos[parte["numero"]] = _pago_parte(parte, monto + parte["propina"])
             propina = sum((p["propina"] for p in partes), Decimal(0))
             metodos = {p["metodo"] for p in partes}
-            if len(metodos) == 1:
+            if len(metodos) == 1 and "Mixto" not in metodos:
                 metodo, efectivo, transferencia = metodos.pop(), None, None
             else:
                 metodo = "Mixto"
-                efectivo = sum((m + p["propina"] for p, m in zip(partes, montos) if p["metodo"] == "Efectivo"), Decimal(0))
+                efectivo = Decimal(0)
+                for p, m in zip(partes, montos):
+                    if p["metodo"] == "Efectivo":
+                        efectivo += m + p["propina"]
+                    elif p["metodo"] == "Mixto":
+                        efectivo += pagos[p["numero"]][0]
                 transferencia = total + propina - efectivo
             venta = _registrar_venta(
                 cur, id_tienda, id_sede, id_usuario, turno, pedido,
@@ -906,11 +937,13 @@ def cobrar_dividido(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa |
 
         resultado = []
         for parte, monto, id_venta, numero_venta in filas:
+            efectivo, transferencia = pagos.get(parte["numero"], (None, None))
             cur.execute(
                 "INSERT INTO pedido_cuentas (id_tienda, id_sede, id_pedido, numero, etiqueta, modo, monto, propina, "
-                "metodo_pago, id_venta, id_usuario) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "metodo_pago, monto_efectivo, monto_transferencia, id_venta, id_usuario) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (id_tienda, id_sede, pedido["id_pedido"], parte["numero"], parte["etiqueta"], modo, monto,
-                 parte["propina"], parte["metodo"], id_venta, id_usuario),
+                 parte["propina"], parte["metodo"], efectivo, transferencia, id_venta, id_usuario),
             )
             id_cuenta = cur.lastrowid
             if parte["items"]:
@@ -920,7 +953,8 @@ def cobrar_dividido(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa |
                 )
             resultado.append(_parte_json({
                 "numero": parte["numero"], "etiqueta": parte["etiqueta"], "monto": monto, "propina": parte["propina"],
-                "metodo_pago": parte["metodo"], "id_venta": id_venta, "numero_venta": numero_venta,
+                "metodo_pago": parte["metodo"], "monto_efectivo": efectivo, "monto_transferencia": transferencia,
+                "id_venta": id_venta, "numero_venta": numero_venta,
             }))
         _cerrar_pedido(cur, id_usuario, pedido)
         conn.commit()

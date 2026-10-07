@@ -29,6 +29,7 @@ python scripts/run_migration.py migrations/2026-10-07_sedes_planes_roles.sql
 python scripts/run_migration.py migrations/2026-10-07_turnos_mesas_comandas.sql
 python scripts/run_migration.py migrations/2026-10-07b_recetas_insumos.sql
 python scripts/run_migration.py migrations/2026-10-07c_cuenta_dividida_llevar.sql
+python scripts/run_migration.py migrations/2026-10-07e_pago_mixto.sql
 python scripts/crear_master.py "Tu nombre" tu@correo.com
 python run.py                   # http://127.0.0.1:5000
 ```
