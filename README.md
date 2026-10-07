@@ -2,6 +2,10 @@
 
 POS y contabilidad en la nube para restaurantes. Versión de jemPOS adaptada: mesas, comandas, cocina, propinas, cuenta dividida y recetas con inventario de ingredientes.
 
+## Ramas
+
+Solo hay dos: `main` (lo aprobado) y `test` (donde se trabaja). Todo cambio va a `test`; cuando jempo lo aprueba o corrige, se pasa a `main` con un PR de `test` a `main`.
+
 ## App (Flask)
 
 Base extraída de jemPOS (que no se modifica): login, recuperación de contraseña, sesión revalidada en cada petición, modo solo lectura al vencer la suscripción, cabeceras de seguridad. Lo propio de Chef:
