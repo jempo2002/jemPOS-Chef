@@ -30,6 +30,11 @@ def _desde(valor) -> datetime | None:
         raise ValueError("Marca de tiempo invalida.") from exc
 
 
+def _llevar(fila: dict) -> str:
+    texto = f"Llevar #{fila['numero_llevar']}" if fila["numero_llevar"] else "Para llevar"
+    return texto + (f" · {fila['cliente_nombre']}" if fila["cliente_nombre"] else "")
+
+
 def comandas(id_sede: int, estacion: str, desde=None) -> dict:
     if estacion not in ESTACIONES:
         raise ValueError("Estacion invalida.")
@@ -39,7 +44,8 @@ def comandas(id_sede: int, estacion: str, desde=None) -> dict:
         cur = conn.cursor(dictionary=True)
         if desde is None:
             cur.execute(
-                "SELECT c.id_comanda, c.numero, c.estado, c.creada_en, c.actualizada_en, m.nombre AS mesa "
+                "SELECT c.id_comanda, c.numero, c.estado, c.creada_en, c.actualizada_en, m.nombre AS mesa, "
+                "p.numero_llevar, p.cliente_nombre "
                 "FROM comandas c JOIN pedidos p ON p.id_pedido = c.id_pedido "
                 "LEFT JOIN mesas m ON m.id_mesa = p.id_mesa "
                 "WHERE c.id_sede = %s AND c.estacion = %s AND c.estado <> 'entregada' ORDER BY c.id_comanda",
@@ -47,7 +53,8 @@ def comandas(id_sede: int, estacion: str, desde=None) -> dict:
             )
         else:
             cur.execute(
-                "SELECT c.id_comanda, c.numero, c.estado, c.creada_en, c.actualizada_en, m.nombre AS mesa "
+                "SELECT c.id_comanda, c.numero, c.estado, c.creada_en, c.actualizada_en, m.nombre AS mesa, "
+                "p.numero_llevar, p.cliente_nombre "
                 "FROM comandas c JOIN pedidos p ON p.id_pedido = c.id_pedido "
                 "LEFT JOIN mesas m ON m.id_mesa = p.id_mesa "
                 "WHERE c.id_sede = %s AND c.estacion = %s AND c.actualizada_en > %s ORDER BY c.id_comanda",
@@ -80,7 +87,8 @@ def comandas(id_sede: int, estacion: str, desde=None) -> dict:
                 "id_comanda": f["id_comanda"],
                 "numero": f["numero"],
                 "estado": f["estado"],
-                "mesa": f["mesa"] or "Para llevar",
+                "mesa": f["mesa"] or _llevar(f),
+                "llevar": f["mesa"] is None,
                 "minutos": max(0, int((hora - f["creada_en"]).total_seconds() // 60)),
                 "items": items.get(f["id_comanda"], []),
             }

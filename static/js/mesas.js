@@ -1,5 +1,6 @@
-/* Plano de mesas: una tarjeta por mesa con su estado, total y avisos.
- * Se refresca cada 10 s. Sin conexion muestra el ultimo plano guardado. */
+/* Plano de mesas: una tarjeta por mesa con su estado, total y avisos, y
+ * debajo los pedidos para llevar sin entregar. Se refresca cada 10 s. Sin
+ * conexion muestra el ultimo plano guardado. */
 (function () {
   'use strict';
 
@@ -57,9 +58,35 @@
       if (Chef.pendientesDeMesa(m.id_mesa).length) a.appendChild(el('span', 'insignia insignia--offline', 'Guardado sin conexión'));
       plano.appendChild(a);
     });
+    pintarLlevar(datos.llevar || []);
     document.getElementById('resumen-mesas').textContent =
       ocupadas + ' de ' + datos.mesas.length + ' mesas ocupadas' + (navigator.onLine ? '' : ' · sin conexión, datos de antes');
   }
+
+  var ESTADOS_LLEVAR = { abierto: 'Abierto', por_cobrar: 'Pidió la cuenta', cerrado: 'Pagado' };
+
+  function pintarLlevar(lista) {
+    var cont = document.getElementById('llevar');
+    cont.textContent = '';
+    document.getElementById('sin-llevar').hidden = lista.length > 0;
+    lista.forEach(function (p) {
+      var a = el('a', 'mesa mesa--' + p.estado);
+      a.href = '/llevar/' + p.uuid;
+      a.appendChild(el('strong', 'mesa__nombre', '#' + p.numero + (p.cliente ? ' · ' + p.cliente : '')));
+      a.appendChild(el('span', 'mesa__estado', ESTADOS_LLEVAR[p.estado] || p.estado));
+      a.appendChild(el('span', 'mesa__total', Chef.pesos(p.total)));
+      a.appendChild(el('small', 'mesa__meta', (p.mesero || '').split(' ')[0] + ' · ' + p.minutos + ' min'));
+      if (p.listos) a.appendChild(el('span', 'insignia insignia--ok', 'Listo para entregar'));
+      else if (p.en_cocina) a.appendChild(el('span', 'insignia', 'En cocina'));
+      if (p.sin_enviar) a.appendChild(el('span', 'insignia', p.sin_enviar + ' sin enviar'));
+      if (Chef.pendientesDeMesa('llevar:' + p.uuid).length) a.appendChild(el('span', 'insignia insignia--offline', 'Guardado sin conexión'));
+      cont.appendChild(a);
+    });
+  }
+
+  document.getElementById('btn-nuevo-llevar').addEventListener('click', function () {
+    window.location.href = '/llevar/' + Chef.uuid();
+  });
 
   function cargar() {
     Chef.api('GET', '/api/mesas/plano').then(function (datos) {

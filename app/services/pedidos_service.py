@@ -1,4 +1,5 @@
-"""Pedidos de mesa: tomar, enviar a cocina, anular, mover, precuenta y cobro.
+"""Pedidos de mesa y para llevar: tomar, enviar a cocina, anular, mover,
+precuenta, cobro y cuenta dividida.
 
 Ciclo (plan "Mesas, comandas y cuentas"):
 
@@ -14,15 +15,27 @@ Ciclo (plan "Mesas, comandas y cuentas"):
      aparte, suma el efectivo al turno y libera la mesa. No vuelve a tocar el
      inventario.
 
-Las rutas trabajan por mesa, no por id de pedido: el dispositivo sin
-conexion puede abrir una mesa y agregarle platos sin saber que id le va a dar
-la base. Cada linea y cada cobro llevan un uuid del dispositivo
-(uuid_cliente); reenviarlos desde la cola sin conexion no duplica nada.
+  5. cobrar_dividido (planes con "cuenta_dividida"): por items, una venta
+     por persona con sus platos; en partes iguales, una sola venta con los
+     platos reales y el pago de cada parte (Mixto si mezclan efectivo con
+     otro metodo). Cada parte queda en pedido_cuentas.
+
+Las rutas trabajan por lugar, no por id de pedido: una mesa (Mesa) o el uuid
+que el dispositivo le pone a un pedido para llevar (Llevar). Asi el
+dispositivo sin conexion puede abrir una mesa o un para llevar y agregarle
+platos sin saber que id le va a dar la base. Cada linea y cada cobro llevan
+un uuid del dispositivo (uuid_cliente); reenviarlos desde la cola sin
+conexion no duplica nada.
+
+Un para llevar vive igual que una mesa (pedidos.tipo = 'llevar', sin mesa).
+Se puede cobrar antes de que la cocina termine; sale de la lista cuando se
+marca entregado al cliente.
 """
 from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from mysql.connector import IntegrityError
@@ -40,6 +53,10 @@ CANTIDAD_MAX = 999
 PROPINA_SUGERIDA = Decimal("0.10")
 _UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _ACTIVOS = ("abierto", "por_cobrar")
+MAX_PARTES = 20
+# Metodos que puede usar cada parte de una cuenta dividida (sin mixto: una
+# persona paga con una sola cosa).
+METODOS_PARTE = ("efectivo", "nequi", "transferencia", "tarjeta")
 # Lo que manda la pantalla -> ventas.metodo_pago
 METODOS = {
     "efectivo": "Efectivo",
@@ -70,13 +87,79 @@ def _auditoria(cur, id_tienda: int, id_usuario: int, accion: str, detalles: str)
     )
 
 
+@dataclass(frozen=True)
+class Mesa:
+    id_mesa: int
+
+
+@dataclass(frozen=True)
+class Llevar:
+    uuid: str
+
+
+def llevar(valor) -> Llevar:
+    uuid = _uuid(valor)
+    if not uuid:
+        raise NoEncontrado("Pedido no encontrado.")
+    return Llevar(uuid)
+
+
+_COLUMNAS = (
+    "SELECT id_pedido, id_tienda, id_sede, tipo, id_mesa, numero_llevar, cliente_nombre, cliente_telefono, "
+    "uuid_cliente, id_mesero, comensales, estado, abierto_en, cerrado_en, entregado_en FROM pedidos "
+)
+
+
 def _pedido_de_mesa(cur, id_sede: int, id_mesa: int, bloquear: bool = True) -> dict | None:
     cur.execute(
-        "SELECT id_pedido, id_tienda, id_sede, id_mesa, id_mesero, comensales, estado, abierto_en "
-        "FROM pedidos WHERE mesa_ocupada = %s AND id_sede = %s" + (" FOR UPDATE" if bloquear else ""),
+        _COLUMNAS + "WHERE mesa_ocupada = %s AND id_sede = %s" + (" FOR UPDATE" if bloquear else ""),
         (id_mesa, id_sede),
     )
     return cur.fetchone()
+
+
+def _pedido_llevar(cur, id_sede: int, uuid: str, bloquear: bool = True) -> dict | None:
+    cur.execute(
+        _COLUMNAS + "WHERE uuid_cliente = %s AND id_sede = %s AND tipo = 'llevar'" + (" FOR UPDATE" if bloquear else ""),
+        (uuid, id_sede),
+    )
+    return cur.fetchone()
+
+
+def _sitio_llevar(uuid: str, pedido: dict | None) -> dict:
+    numero = pedido["numero_llevar"] if pedido else None
+    cliente = pedido["cliente_nombre"] if pedido else None
+    titulo = "Para llevar" + (f" #{numero}" if numero else "") + (f" · {cliente}" if cliente else "")
+    return {
+        "tipo": "llevar",
+        "uuid": uuid,
+        "nombre": f"#{numero}" if numero else "nuevo",
+        "cliente": cliente,
+        "telefono": pedido["cliente_telefono"] if pedido else None,
+        "titulo": titulo,
+    }
+
+
+def _ubicar(cur, id_sede: int, lugar: Mesa | Llevar, bloquear: bool = True) -> tuple[dict, dict | None]:
+    """(sitio, pedido): lo que la pantalla muestra del lugar y su pedido.
+    Una mesa da solo su pedido abierto; un para llevar, su pedido en
+    cualquier estado (se sigue viendo despues de cobrado)."""
+    if isinstance(lugar, Mesa):
+        # Bloquear la mesa serializa a dos meseros abriendo la misma mesa.
+        mesa = mesa_de_sede(cur, id_sede, lugar.id_mesa, bloquear=bloquear)
+        nombre = mesa["nombre"]
+        sitio = {"tipo": "mesa", **mesa, "titulo": nombre if nombre.lower().startswith("mesa") else f"Mesa {nombre}"}
+        return sitio, _pedido_de_mesa(cur, id_sede, lugar.id_mesa, bloquear)
+    pedido = _pedido_llevar(cur, id_sede, lugar.uuid, bloquear)
+    return _sitio_llevar(lugar.uuid, pedido), pedido
+
+
+def _activo(sitio: dict, pedido: dict | None) -> dict:
+    if not pedido:
+        raise Conflicto("La mesa no tiene cuenta abierta." if sitio["tipo"] == "mesa" else "El pedido para llevar está vacío.")
+    if pedido["estado"] not in _ACTIVOS:
+        raise Conflicto("Este pedido ya está cerrado.")
+    return pedido
 
 
 def _lineas(cur, id_pedido: int) -> list[dict]:
@@ -92,10 +175,11 @@ def _lineas(cur, id_pedido: int) -> list[dict]:
     return cur.fetchall()
 
 
-def _detalle(cur, mesa: dict, pedido: dict | None) -> dict:
+def _detalle(cur, sitio: dict, pedido: dict | None) -> dict:
     """Lo que pinta la pantalla del pedido."""
+    base = {"lugar": sitio, "mesa": sitio if sitio["tipo"] == "mesa" else None}
     if not pedido:
-        return {"mesa": mesa, "pedido": None, "items": [], "total": 0, "sin_enviar": 0}
+        return {**base, "pedido": None, "items": [], "total": 0, "sin_enviar": 0}
     items = []
     total = Decimal(0)
     for linea in _lineas(cur, pedido["id_pedido"]):
@@ -116,13 +200,15 @@ def _detalle(cur, mesa: dict, pedido: dict | None) -> dict:
     cur.execute("SELECT nombre_completo FROM usuarios WHERE id_usuario = %s", (pedido["id_mesero"],))
     mesero = (cur.fetchone() or {}).get("nombre_completo")
     return {
-        "mesa": mesa,
+        **base,
         "pedido": {
             "id_pedido": pedido["id_pedido"],
+            "tipo": pedido["tipo"],
             "estado": pedido["estado"],
             "comensales": pedido["comensales"],
             "mesero": mesero,
             "abierto_en": pedido["abierto_en"].strftime("%H:%M") if pedido["abierto_en"] else None,
+            "entregado": pedido["entregado_en"] is not None,
         },
         "items": items,
         "total": float(total),
@@ -131,12 +217,11 @@ def _detalle(cur, mesa: dict, pedido: dict | None) -> dict:
     }
 
 
-def ver(id_sede: int, id_mesa: int) -> dict:
+def ver(id_sede: int, lugar: Mesa | Llevar) -> dict:
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
-        mesa = mesa_de_sede(cur, id_sede, id_mesa)
-        return _detalle(cur, mesa, _pedido_de_mesa(cur, id_sede, id_mesa, bloquear=False))
+        return _detalle(cur, *_ubicar(cur, id_sede, lugar, bloquear=False))
     finally:
         conn.close()
 
@@ -164,31 +249,61 @@ def _items_validos(data: dict) -> list[dict]:
     return limpios
 
 
-def agregar_items(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int, data: dict) -> dict:
-    """Suma lineas al pedido de la mesa (lo abre si no hay). Devuelve el
-    detalle y `avisos` si algo controlado no alcanza en el inventario."""
+def _telefono(valor) -> str | None:
+    texto = re.sub(r"[\s-]", "", str(valor or ""))
+    if not texto:
+        return None
+    if not re.fullmatch(r"\+?\d{7,15}", texto):
+        raise ValueError("El teléfono no es válido.")
+    return texto
+
+
+def agregar_items(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | Llevar, data: dict) -> dict:
+    """Suma lineas al pedido del lugar (lo abre si no hay). Devuelve el
+    detalle y `avisos` si algo controlado no alcanza en el inventario. Un
+    para llevar recibe aqui tambien el nombre y telefono del cliente."""
     items = _items_validos(data)
     comensales = data.get("comensales")
     comensales = parse_int(comensales, "Comensales", min_value=1, max_value=99) if comensales not in (None, "") else None
+    cliente = sanitize_optional_text(data.get("cliente"), "El nombre del cliente", max_len=80)
+    telefono = _telefono(data.get("telefono"))
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
-        # Bloquear la mesa serializa a dos meseros abriendo la misma mesa.
-        mesa = mesa_de_sede(cur, id_sede, id_mesa, bloquear=True)
-        pedido = _pedido_de_mesa(cur, id_sede, id_mesa)
+        sitio, pedido = _ubicar(cur, id_sede, lugar)
         if not pedido:
-            cur.execute(
-                "INSERT INTO pedidos (id_tienda, id_sede, id_mesa, id_mesero, comensales) VALUES (%s, %s, %s, %s, %s)",
-                (id_tienda, id_sede, id_mesa, id_usuario, comensales),
-            )
-            pedido = _pedido_de_mesa(cur, id_sede, id_mesa)
+            if isinstance(lugar, Mesa):
+                cur.execute(
+                    "INSERT INTO pedidos (id_tienda, id_sede, tipo, id_mesa, id_mesero, comensales) "
+                    "VALUES (%s, %s, 'mesa', %s, %s, %s)",
+                    (id_tienda, id_sede, lugar.id_mesa, id_usuario, comensales),
+                )
+            else:
+                numero = caja_service.siguiente_consecutivo(cur, id_tienda, f"llevar:{id_sede}")
+                cur.execute(
+                    "INSERT INTO pedidos (id_tienda, id_sede, tipo, numero_llevar, cliente_nombre, cliente_telefono, "
+                    "uuid_cliente, id_mesero, comensales) VALUES (%s, %s, 'llevar', %s, %s, %s, %s, %s, %s)",
+                    (id_tienda, id_sede, numero, cliente, telefono, lugar.uuid, id_usuario, comensales),
+                )
         else:
+            if pedido["estado"] not in _ACTIVOS:
+                raise Conflicto("Este pedido ya está cerrado. Abre uno nuevo.")
+            cambios = {}
             if pedido["estado"] == "por_cobrar":
-                # Pidieron algo mas despues de la precuenta.
-                cur.execute("UPDATE pedidos SET estado = 'abierto' WHERE id_pedido = %s", (pedido["id_pedido"],))
+                cambios["estado"] = "abierto"  # pidieron algo mas despues de la precuenta
             if comensales:
-                cur.execute("UPDATE pedidos SET comensales = %s WHERE id_pedido = %s", (comensales, pedido["id_pedido"]))
-            pedido = _pedido_de_mesa(cur, id_sede, id_mesa)
+                cambios["comensales"] = comensales
+            if isinstance(lugar, Llevar):
+                if cliente:
+                    cambios["cliente_nombre"] = cliente
+                if telefono:
+                    cambios["cliente_telefono"] = telefono
+            if cambios:
+                cur.execute(
+                    "UPDATE pedidos SET " + ", ".join(f"{c} = %s" for c in cambios) + " WHERE id_pedido = %s",
+                    (*cambios.values(), pedido["id_pedido"]),
+                )
+        sitio, pedido = _ubicar(cur, id_sede, lugar)
 
         cur.execute("SELECT COUNT(*) AS n FROM pedido_items WHERE id_pedido = %s", (pedido["id_pedido"],))
         if cur.fetchone()["n"] + len(items) > MAX_LINEAS_POR_PEDIDO:
@@ -221,7 +336,7 @@ def agregar_items(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int, d
             )
             agregados += 1
 
-        # Aviso (no bloqueo): lo pendiente de esta mesa contra el stock de la sede.
+        # Aviso (no bloqueo): lo pendiente de este pedido contra el stock de la sede.
         controlados = [pid for pid in ids if productos[pid]["controla_stock"]]
         avisos = []
         if controlados:
@@ -236,11 +351,11 @@ def agregar_items(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int, d
                 quedan = stock.get(fila["id_producto"], Decimal(0))
                 if Decimal(fila["pedido"]) > quedan:
                     avisos.append(f"{productos[fila['id_producto']]['nombre']}: quedan {quedan:g} en inventario.")
-        detalle = _detalle(cur, mesa, pedido)
+        detalle = _detalle(cur, sitio, pedido)
         conn.commit()
     except IntegrityError as exc:
         conn.rollback()
-        raise Conflicto("La mesa cambió mientras guardabas. Intenta de nuevo.") from exc
+        raise Conflicto("La cuenta cambió mientras guardabas. Intenta de nuevo.") from exc
     except Exception:
         conn.rollback()
         raise
@@ -251,17 +366,15 @@ def agregar_items(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int, d
     return detalle
 
 
-def enviar_comanda(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int) -> dict:
+def enviar_comanda(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | Llevar) -> dict:
     """Envia lo pendiente: descuenta inventario y crea una comanda por
     estacion, todo o nada. Sin pendientes no hace nada (reenviar desde la
     cola sin conexion es seguro)."""
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
-        mesa = mesa_de_sede(cur, id_sede, id_mesa)
-        pedido = _pedido_de_mesa(cur, id_sede, id_mesa)
-        if not pedido:
-            raise Conflicto("La mesa no tiene cuenta abierta.")
+        sitio, pedido = _ubicar(cur, id_sede, lugar)
+        _activo(sitio, pedido)
         pendientes = [l for l in _lineas(cur, pedido["id_pedido"]) if l["estado"] == "pendiente"]
         if not pendientes:
             conn.rollback()
@@ -274,7 +387,7 @@ def enviar_comanda(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int) 
                 consumo[linea["id_producto"]] += Decimal(linea["cantidad"])
             elif linea["es_preparado"]:
                 preparados[linea["id_producto"]] += Decimal(linea["cantidad"])
-        motivo = f"Comanda mesa {mesa['nombre']}"
+        motivo = f"Comanda {sitio['titulo']}"
         inventario_service.descontar(cur, id_tienda, id_sede, id_usuario, dict(consumo), motivo,
                                      id_pedido=pedido["id_pedido"])
         if preparados and recetas_service.recetas_activas(cur, id_tienda):
@@ -303,7 +416,8 @@ def enviar_comanda(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int) 
             comandas.append({
                 "numero": numero,
                 "estacion": estacion,
-                "mesa": mesa["nombre"],
+                "mesa": sitio["nombre"],
+                "lugar": sitio["titulo"],
                 "items": [{"nombre": l["nombre"], "cantidad": float(l["cantidad"]), "nota": l["nota"]} for l in lineas],
             })
         directos = [l["id_item"] for l in pendientes if l["estacion"] == "ninguna"]
@@ -383,17 +497,14 @@ def anular_item(id_tienda: int, id_sede: int, id_usuario: int, rol: str, id_item
         conn.close()
 
 
-def anular_pedido(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int, data: dict) -> None:
-    """Libera la mesa sin cobrar. Solo si nada de la cuenta fue a cocina (o
-    ya se anulo): lo enviado lo anula un Admin item por item."""
+def anular_pedido(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | Llevar, data: dict) -> None:
+    """Cierra la cuenta sin cobrar (la mesa queda libre). Solo si nada fue a
+    cocina (o ya se anulo): lo enviado lo anula un Admin item por item."""
     motivo = sanitize_text(data.get("motivo"), "El motivo", max_len=200)
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
-        mesa_de_sede(cur, id_sede, id_mesa)
-        pedido = _pedido_de_mesa(cur, id_sede, id_mesa)
-        if not pedido:
-            raise Conflicto("La mesa no tiene cuenta abierta.")
+        pedido = _activo(*_ubicar(cur, id_sede, lugar))
         cur.execute(
             "SELECT COUNT(*) AS n FROM pedido_items WHERE id_pedido = %s AND estado NOT IN ('pendiente', 'anulado')",
             (pedido["id_pedido"],),
@@ -419,19 +530,17 @@ def anular_pedido(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int, d
         conn.close()
 
 
-def precuenta(id_sede: int, id_mesa: int) -> dict:
+def precuenta(id_sede: int, lugar: Mesa | Llevar) -> dict:
     """Total y propina sugerida (10 %, voluntaria). El pedido pasa a
     `por_cobrar`; si piden algo mas vuelve a `abierto` solo."""
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
-        mesa = mesa_de_sede(cur, id_sede, id_mesa)
-        pedido = _pedido_de_mesa(cur, id_sede, id_mesa)
-        if not pedido:
-            raise Conflicto("La mesa no tiene cuenta abierta.")
+        sitio, pedido = _ubicar(cur, id_sede, lugar)
+        _activo(sitio, pedido)
         cur.execute("UPDATE pedidos SET estado = 'por_cobrar' WHERE id_pedido = %s", (pedido["id_pedido"],))
         pedido["estado"] = "por_cobrar"
-        detalle = _detalle(cur, mesa, pedido)
+        detalle = _detalle(cur, sitio, pedido)
         conn.commit()
         return detalle
     except Exception:
@@ -478,15 +587,46 @@ def mover(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int, data: dic
         conn.close()
 
 
+def entregar_llevar(id_sede: int, lugar: Llevar) -> None:
+    """Marca el para llevar como entregado al cliente: sale de la lista y sus
+    comandas quedan entregadas (en Basico no hay pantalla de cocina que las
+    cierre). Se puede repetir sin efecto."""
+    conn = get_db()
+    try:
+        cur = conn.cursor(dictionary=True)
+        sitio, pedido = _ubicar(cur, id_sede, lugar)
+        if not pedido or pedido["estado"] == "anulado":
+            raise NoEncontrado("Pedido no encontrado.")
+        if pedido["entregado_en"] is None:
+            cur.execute("UPDATE pedidos SET entregado_en = %s WHERE id_pedido = %s", (ahora_local(), pedido["id_pedido"]))
+            cur.execute(
+                "UPDATE comandas SET estado = 'entregada' WHERE id_pedido = %s AND estado <> 'entregada'",
+                (pedido["id_pedido"],),
+            )
+            cur.execute(
+                "UPDATE pedido_items SET estado = 'entregado' WHERE id_pedido = %s AND estado IN ('enviado', 'listo')",
+                (pedido["id_pedido"],),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# --- cobro ---------------------------------------------------------------------
+
 def _venta_por_uuid(cur, id_tienda: int, uuid: str) -> dict | None:
     cur.execute(
-        "SELECT id_venta, numero_venta, total_final, propina, metodo_pago FROM ventas "
+        "SELECT id_venta, id_pedido, numero_venta, total_final, propina, metodo_pago FROM ventas "
         "WHERE uuid_cliente = %s AND id_tienda = %s",
         (uuid, id_tienda),
     )
-    venta = cur.fetchone()
-    if not venta:
-        return None
+    return cur.fetchone()
+
+
+def _repetida(venta: dict) -> dict:
     return {
         "id_venta": venta["id_venta"],
         "numero_venta": venta["numero_venta"],
@@ -497,93 +637,77 @@ def _venta_por_uuid(cur, id_tienda: int, uuid: str) -> dict | None:
     }
 
 
-def cobrar(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int, data: dict) -> dict:
-    """Cobra la cuenta de la mesa en una venta. Exige caja abierta en la sede
-    y nada pendiente de enviar (lo no enviado no descontó inventario)."""
-    uuid = _uuid(data.get("uuid"))
+def _propina(valor) -> Decimal:
+    return _pesos(parse_float(valor or 0, "La propina", min_value=0, max_value=100_000_000))
+
+
+def _pago(data: dict, a_pagar: Decimal) -> tuple[str, Decimal | None, Decimal | None]:
+    """(metodo de ventas, efectivo, transferencia). En Mixto las dos partes
+    deben sumar exacto lo que se paga."""
     metodo = METODOS.get(str(data.get("metodo") or "").strip().lower())
     if not metodo:
         raise ValueError("Método de pago invalido.")
-    propina = _pesos(parse_float(data.get("propina") or 0, "La propina", min_value=0, max_value=100_000_000))
-    id_pedido_visto = data.get("id_pedido")
+    if metodo != "Mixto":
+        return metodo, None, None
+    efectivo = _pesos(parse_float(data.get("monto_efectivo"), "El efectivo", min_value=0, allow_zero=False))
+    transferencia = _pesos(parse_float(data.get("monto_transferencia"), "La transferencia", min_value=0, allow_zero=False))
+    if efectivo + transferencia != a_pagar:
+        raise ValueError(f"El efectivo y la transferencia deben sumar exactamente ${int(a_pagar):,}.".replace(",", "."))
+    return metodo, efectivo, transferencia
 
-    conn = get_db()
-    try:
-        cur = conn.cursor(dictionary=True)
-        if uuid:
-            repetida = _venta_por_uuid(cur, id_tienda, uuid)
-            if repetida:
-                return repetida
-        turno = caja_service.turno_abierto(cur, id_sede, bloquear=True)
-        if not turno:
-            raise Conflicto("Abre la caja antes de cobrar.")
-        mesa = mesa_de_sede(cur, id_sede, id_mesa)
-        pedido = _pedido_de_mesa(cur, id_sede, id_mesa)
-        if not pedido:
-            raise Conflicto("La mesa no tiene cuenta abierta.")
-        if id_pedido_visto not in (None, "") and parse_int(id_pedido_visto, "Pedido") != pedido["id_pedido"]:
-            raise Conflicto("La cuenta de esta mesa cambió. Revisa antes de cobrar.")
-        lineas = [l for l in _lineas(cur, pedido["id_pedido"]) if l["estado"] != "anulado"]
-        if not lineas:
-            raise Conflicto("La cuenta está vacía.")
-        sin_enviar = sum(1 for l in lineas if l["estado"] == "pendiente")
-        if sin_enviar:
-            raise Conflicto(f"Hay {sin_enviar} producto(s) sin enviar a cocina. Envíalos o quítalos antes de cobrar.")
 
-        total = sum((_pesos(Decimal(l["cantidad"]) * Decimal(l["precio_unitario"])) for l in lineas), Decimal(0))
-        if propina > total:
-            raise ValueError("La propina no puede ser mayor que la cuenta.")
-        a_pagar = total + propina
-        monto_efectivo = monto_transferencia = None
-        if metodo == "Mixto":
-            monto_efectivo = _pesos(parse_float(data.get("monto_efectivo"), "El efectivo", min_value=0, allow_zero=False))
-            monto_transferencia = _pesos(parse_float(data.get("monto_transferencia"), "La transferencia", min_value=0, allow_zero=False))
-            if monto_efectivo + monto_transferencia != a_pagar:
-                raise ValueError(f"El efectivo y la transferencia deben sumar exactamente ${int(a_pagar):,}.".replace(",", "."))
+def _preparar_cobro(cur, id_sede: int, lugar: Mesa | Llevar, id_pedido_visto) -> tuple[dict, dict, dict, list[dict]]:
+    """Turno abierto (bloqueado), sitio, pedido y lineas a cobrar. Exige caja
+    abierta en la sede y nada pendiente de enviar (lo no enviado no
+    descontó inventario)."""
+    turno = caja_service.turno_abierto(cur, id_sede, bloquear=True)
+    if not turno:
+        raise Conflicto("Abre la caja antes de cobrar.")
+    sitio, pedido = _ubicar(cur, id_sede, lugar)
+    _activo(sitio, pedido)
+    if id_pedido_visto not in (None, "") and parse_int(id_pedido_visto, "Pedido") != pedido["id_pedido"]:
+        raise Conflicto("La cuenta cambió. Revisa antes de cobrar.")
+    lineas = [l for l in _lineas(cur, pedido["id_pedido"]) if l["estado"] != "anulado"]
+    if not lineas:
+        raise Conflicto("La cuenta está vacía.")
+    sin_enviar = sum(1 for l in lineas if l["estado"] == "pendiente")
+    if sin_enviar:
+        raise Conflicto(f"Hay {sin_enviar} producto(s) sin enviar a cocina. Envíalos o quítalos antes de cobrar.")
+    return turno, sitio, pedido, lineas
 
-        numero = caja_service.siguiente_consecutivo(cur, id_tienda, "venta")
-        numero_venta = f"V{id_tienda:04d}-{numero:06d}"
+
+def _registrar_venta(cur, id_tienda: int, id_sede: int, id_usuario: int, turno: dict, pedido: dict,
+                     lineas: list[tuple], propina: Decimal, metodo: str, efectivo, transferencia,
+                     uuid: str | None, observaciones: str) -> dict:
+    """Una venta normal (ventas + detalle_ventas) con la propina aparte, y el
+    efectivo al turno. lineas: (id_producto, cantidad, precio_unitario).
+    No toca el inventario: ya se descontó al enviar a cocina."""
+    detalle = [(pid, cant, precio, _pesos(Decimal(cant) * Decimal(precio))) for pid, cant, precio in lineas]
+    total = sum((d[3] for d in detalle), Decimal(0))
+    a_pagar = total + propina
+    numero = caja_service.siguiente_consecutivo(cur, id_tienda, "venta")
+    numero_venta = f"V{id_tienda:04d}-{numero:06d}"
+    cur.execute(
+        "INSERT INTO ventas (id_tienda, id_sede, id_turno, id_cajero, id_pedido, id_mesero, numero_venta, "
+        "subtotal, total_final, propina, metodo_pago, monto_efectivo, monto_transferencia, estado_venta, "
+        "observaciones, uuid_cliente) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pagada', %s, %s)",
+        (id_tienda, id_sede, turno["id_turno"], id_usuario, pedido["id_pedido"], pedido["id_mesero"], numero_venta,
+         total, total, propina, metodo, efectivo, transferencia, observaciones[:255], uuid),
+    )
+    id_venta = cur.lastrowid
+    cur.executemany(
+        "INSERT INTO detalle_ventas (id_venta, id_producto, cantidad, unidad_venta, precio_unitario_historico, subtotal_linea) "
+        "VALUES (%s, %s, %s, 'Unidad', %s, %s)",
+        [(id_venta, pid, cant, precio, sub) for pid, cant, precio, sub in detalle],
+    )
+    al_cajon = a_pagar if metodo == "Efectivo" else (efectivo or Decimal(0))
+    if al_cajon:
         cur.execute(
-            "INSERT INTO ventas (id_tienda, id_sede, id_turno, id_cajero, id_pedido, id_mesero, numero_venta, "
-            "subtotal, total_final, propina, metodo_pago, monto_efectivo, monto_transferencia, estado_venta, "
-            "observaciones, uuid_cliente) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pagada', %s, %s)",
-            (id_tienda, id_sede, turno["id_turno"], id_usuario, pedido["id_pedido"], pedido["id_mesero"], numero_venta,
-             total, total, propina, metodo, monto_efectivo, monto_transferencia, f"Mesa {mesa['nombre']}", uuid),
+            "UPDATE turnos_caja SET monto_final_esperado = COALESCE(monto_final_esperado, monto_inicial, 0) + %s "
+            "WHERE id_turno = %s",
+            (al_cajon, turno["id_turno"]),
         )
-        id_venta = cur.lastrowid
-        cur.executemany(
-            "INSERT INTO detalle_ventas (id_venta, id_producto, cantidad, unidad_venta, precio_unitario_historico, subtotal_linea) "
-            "VALUES (%s, %s, %s, 'Unidad', %s, %s)",
-            [(id_venta, l["id_producto"], l["cantidad"], l["precio_unitario"],
-              _pesos(Decimal(l["cantidad"]) * Decimal(l["precio_unitario"]))) for l in lineas],
-        )
-        al_cajon = a_pagar if metodo == "Efectivo" else (monto_efectivo or Decimal(0))
-        if al_cajon:
-            cur.execute(
-                "UPDATE turnos_caja SET monto_final_esperado = COALESCE(monto_final_esperado, monto_inicial, 0) + %s "
-                "WHERE id_turno = %s",
-                (al_cajon, turno["id_turno"]),
-            )
-        cur.execute(
-            "UPDATE pedidos SET estado = 'cerrado', cerrado_en = %s, id_usuario_cierre = %s WHERE id_pedido = %s",
-            (ahora_local(), id_usuario, pedido["id_pedido"]),
-        )
-        conn.commit()
-    except IntegrityError as exc:
-        conn.rollback()
-        # El mismo cobro llego dos veces a la vez: gano el otro.
-        if uuid:
-            cur = conn.cursor(dictionary=True)
-            repetida = _venta_por_uuid(cur, id_tienda, uuid)
-            if repetida:
-                return repetida
-        raise Conflicto("No se pudo cobrar. Intenta de nuevo.") from exc
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
     return {
         "id_venta": id_venta,
         "numero_venta": numero_venta,
@@ -591,5 +715,231 @@ def cobrar(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int, data: di
         "propina": float(propina),
         "a_pagar": float(a_pagar),
         "metodo_pago": metodo,
-        "mesa": mesa["nombre"],
+    }
+
+
+def _cerrar_pedido(cur, id_usuario: int, pedido: dict) -> None:
+    cur.execute(
+        "UPDATE pedidos SET estado = 'cerrado', cerrado_en = %s, id_usuario_cierre = %s WHERE id_pedido = %s",
+        (ahora_local(), id_usuario, pedido["id_pedido"]),
+    )
+
+
+def cobrar(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | Llevar, data: dict) -> dict:
+    """Cobra la cuenta completa en una venta."""
+    uuid = _uuid(data.get("uuid"))
+    propina = _propina(data.get("propina"))
+    conn = get_db()
+    try:
+        cur = conn.cursor(dictionary=True)
+        if uuid:
+            repetida = _venta_por_uuid(cur, id_tienda, uuid)
+            if repetida:
+                return _repetida(repetida)
+        turno, sitio, pedido, lineas = _preparar_cobro(cur, id_sede, lugar, data.get("id_pedido"))
+        total = sum((_pesos(Decimal(l["cantidad"]) * Decimal(l["precio_unitario"])) for l in lineas), Decimal(0))
+        if propina > total:
+            raise ValueError("La propina no puede ser mayor que la cuenta.")
+        metodo, efectivo, transferencia = _pago(data, total + propina)
+        venta = _registrar_venta(
+            cur, id_tienda, id_sede, id_usuario, turno, pedido,
+            [(l["id_producto"], l["cantidad"], l["precio_unitario"]) for l in lineas],
+            propina, metodo, efectivo, transferencia, uuid, sitio["titulo"],
+        )
+        _cerrar_pedido(cur, id_usuario, pedido)
+        conn.commit()
+    except IntegrityError as exc:
+        conn.rollback()
+        # El mismo cobro llego dos veces a la vez: gano el otro.
+        if uuid:
+            repetida = _venta_por_uuid(conn.cursor(dictionary=True), id_tienda, uuid)
+            if repetida:
+                return _repetida(repetida)
+        raise Conflicto("No se pudo cobrar. Intenta de nuevo.") from exc
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    venta["mesa"] = sitio["nombre"]
+    venta["lugar"] = sitio["titulo"]
+    return venta
+
+
+# --- cuenta dividida -------------------------------------------------------------
+
+def _partes_validas(data: dict) -> tuple[str, list[dict]]:
+    modo = str(data.get("modo") or "").strip()
+    if modo not in ("items", "iguales"):
+        raise ValueError("Elige cómo dividir: por productos o en partes iguales.")
+    partes = data.get("partes")
+    if not isinstance(partes, list) or not 2 <= len(partes) <= MAX_PARTES:
+        raise ValueError(f"Divide la cuenta entre 2 y {MAX_PARTES} personas.")
+    limpias = []
+    for n, parte in enumerate(partes, start=1):
+        if not isinstance(parte, dict):
+            raise ValueError("Parte invalida.")
+        metodo = str(parte.get("metodo") or "").strip().lower()
+        if metodo not in METODOS_PARTE:
+            raise ValueError("Método de pago invalido.")
+        limpia = {
+            "numero": n,
+            "etiqueta": sanitize_optional_text(parte.get("etiqueta"), "El nombre de la cuenta", max_len=40) or f"Cuenta {n}",
+            "metodo": METODOS[metodo],
+            "propina": _propina(parte.get("propina")),
+            "items": {},
+        }
+        if modo == "items":
+            items = parte.get("items")
+            if not isinstance(items, list) or not items:
+                raise ValueError(f"{limpia['etiqueta']} no tiene productos.")
+            for item in items[:MAX_LINEAS_POR_PEDIDO]:
+                if not isinstance(item, dict):
+                    raise ValueError("Producto invalido.")
+                id_item = parse_int(item.get("id_item"), "Producto", min_value=1)
+                cantidad = Decimal(str(parse_float(item.get("cantidad"), "La cantidad", min_value=0, max_value=CANTIDAD_MAX)))
+                cantidad = cantidad.quantize(Decimal("0.001"))
+                if cantidad <= 0:
+                    raise ValueError("La cantidad debe ser mayor a cero.")
+                limpia["items"][id_item] = limpia["items"].get(id_item, Decimal(0)) + cantidad
+        limpias.append(limpia)
+    return modo, limpias
+
+
+def _cobro_dividido_repetido(cur, id_tienda: int, uuid: str) -> dict | None:
+    venta = _venta_por_uuid(cur, id_tienda, uuid)
+    if not venta:
+        return None
+    cur.execute(
+        "SELECT c.numero, c.etiqueta, c.monto, c.propina, c.metodo_pago, c.id_venta, v.numero_venta "
+        "FROM pedido_cuentas c JOIN ventas v ON v.id_venta = c.id_venta WHERE c.id_pedido = %s ORDER BY c.numero",
+        (venta["id_pedido"],),
+    )
+    partes = [_parte_json(p) for p in cur.fetchall()]
+    return {"partes": partes, "ventas": sorted({p["numero_venta"] for p in partes}), "repetido": True}
+
+
+def _parte_json(parte: dict) -> dict:
+    return {
+        "numero": parte["numero"],
+        "etiqueta": parte["etiqueta"],
+        "monto": float(parte["monto"]),
+        "propina": float(parte["propina"]),
+        "a_pagar": float(Decimal(parte["monto"]) + Decimal(parte["propina"])),
+        "metodo_pago": parte["metodo_pago"],
+        "id_venta": parte["id_venta"],
+        "numero_venta": parte["numero_venta"],
+    }
+
+
+def cobrar_dividido(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | Llevar, data: dict) -> dict:
+    """Cobra la cuenta entre varias personas, todo o nada.
+
+    modo 'items': cada parte trae los items que paga ({id_item, cantidad};
+    una linea de 2 se puede partir 1 y 1) y se cobra como una venta propia,
+    con su metodo y su propina. Entre todas deben cubrir cada linea exacto.
+
+    modo 'iguales': el total se parte en N montos (los pesos que sobran van a
+    las primeras partes) y se registra UNA venta con los items reales. Si
+    todas pagan igual, ese es el metodo; si mezclan, la venta queda Mixto:
+    efectivo lo de las partes en efectivo y transferencia el resto (Nequi,
+    Daviplata o tarjeta). Cada parte queda en pedido_cuentas con su metodo.
+    """
+    uuid = _uuid(data.get("uuid"))
+    modo, partes = _partes_validas(data)
+    conn = get_db()
+    try:
+        cur = conn.cursor(dictionary=True)
+        if uuid:
+            repetido = _cobro_dividido_repetido(cur, id_tienda, uuid)
+            if repetido:
+                return repetido
+        turno, sitio, pedido, lineas = _preparar_cobro(cur, id_sede, lugar, data.get("id_pedido"))
+        titulo = sitio["titulo"]
+        por_item = {l["id_item"]: l for l in lineas}
+        filas = []  # (parte, monto, id_venta, numero_venta)
+
+        if modo == "items":
+            repartido: dict[int, Decimal] = defaultdict(Decimal)
+            for parte in partes:
+                for id_item, cantidad in parte["items"].items():
+                    if id_item not in por_item:
+                        raise Conflicto("Un producto de la división ya no está en la cuenta. Revisa y vuelve a dividir.")
+                    repartido[id_item] += cantidad
+            for id_item, linea in por_item.items():
+                diferencia = Decimal(linea["cantidad"]) - repartido[id_item]
+                if diferencia > 0:
+                    raise ValueError(f"Falta repartir {diferencia:g} de {linea['nombre']}.")
+                if diferencia < 0:
+                    raise ValueError(f"{linea['nombre']} está repartido de más.")
+            for parte in partes:
+                items = [(por_item[i]["id_producto"], c, por_item[i]["precio_unitario"]) for i, c in parte["items"].items()]
+                monto = sum((_pesos(Decimal(c) * Decimal(p)) for _, c, p in items), Decimal(0))
+                if parte["propina"] > monto:
+                    raise ValueError(f"La propina de {parte['etiqueta']} no puede ser mayor que su cuenta.")
+                venta = _registrar_venta(
+                    cur, id_tienda, id_sede, id_usuario, turno, pedido, items, parte["propina"], parte["metodo"],
+                    None, None, uuid if parte["numero"] == 1 else None, f"{titulo} · {parte['etiqueta']}",
+                )
+                filas.append((parte, monto, venta["id_venta"], venta["numero_venta"]))
+        else:
+            total = sum((_pesos(Decimal(l["cantidad"]) * Decimal(l["precio_unitario"])) for l in lineas), Decimal(0))
+            base, sobra = divmod(int(total), len(partes))
+            montos = [Decimal(base + (1 if i < sobra else 0)) for i in range(len(partes))]
+            for parte, monto in zip(partes, montos):
+                if parte["propina"] > monto:
+                    raise ValueError(f"La propina de {parte['etiqueta']} no puede ser mayor que su parte.")
+            propina = sum((p["propina"] for p in partes), Decimal(0))
+            metodos = {p["metodo"] for p in partes}
+            if len(metodos) == 1:
+                metodo, efectivo, transferencia = metodos.pop(), None, None
+            else:
+                metodo = "Mixto"
+                efectivo = sum((m + p["propina"] for p, m in zip(partes, montos) if p["metodo"] == "Efectivo"), Decimal(0))
+                transferencia = total + propina - efectivo
+            venta = _registrar_venta(
+                cur, id_tienda, id_sede, id_usuario, turno, pedido,
+                [(l["id_producto"], l["cantidad"], l["precio_unitario"]) for l in lineas],
+                propina, metodo, efectivo, transferencia, uuid, f"{titulo} · dividida en {len(partes)}",
+            )
+            filas = [(p, m, venta["id_venta"], venta["numero_venta"]) for p, m in zip(partes, montos)]
+
+        resultado = []
+        for parte, monto, id_venta, numero_venta in filas:
+            cur.execute(
+                "INSERT INTO pedido_cuentas (id_tienda, id_sede, id_pedido, numero, etiqueta, modo, monto, propina, "
+                "metodo_pago, id_venta, id_usuario) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (id_tienda, id_sede, pedido["id_pedido"], parte["numero"], parte["etiqueta"], modo, monto,
+                 parte["propina"], parte["metodo"], id_venta, id_usuario),
+            )
+            id_cuenta = cur.lastrowid
+            if parte["items"]:
+                cur.executemany(
+                    "INSERT INTO pedido_cuenta_items (id_cuenta, id_item, cantidad) VALUES (%s, %s, %s)",
+                    [(id_cuenta, i, c) for i, c in parte["items"].items()],
+                )
+            resultado.append(_parte_json({
+                "numero": parte["numero"], "etiqueta": parte["etiqueta"], "monto": monto, "propina": parte["propina"],
+                "metodo_pago": parte["metodo"], "id_venta": id_venta, "numero_venta": numero_venta,
+            }))
+        _cerrar_pedido(cur, id_usuario, pedido)
+        conn.commit()
+    except IntegrityError as exc:
+        conn.rollback()
+        if uuid:
+            repetido = _cobro_dividido_repetido(conn.cursor(dictionary=True), id_tienda, uuid)
+            if repetido:
+                return repetido
+        raise Conflicto("No se pudo cobrar. Intenta de nuevo.") from exc
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {
+        "partes": resultado,
+        "ventas": sorted({p["numero_venta"] for p in resultado}),
+        "lugar": sitio["titulo"],
+        "total": sum(p["monto"] for p in resultado),
+        "propina": sum(p["propina"] for p in resultado),
     }

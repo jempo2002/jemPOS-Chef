@@ -1,4 +1,9 @@
-/* Pedido de una mesa: carta, cuenta, enviar a cocina, precuenta y cobro.
+/* Pedido de una mesa o para llevar: carta, cuenta, enviar a cocina,
+ * precuenta, cobro y cuenta dividida.
+ *
+ * La misma pantalla sirve para los dos: una mesa trabaja en /api/mesas/<id> y
+ * un para llevar en /api/llevar/<uuid> (el uuid lo pone el dispositivo, asi
+ * que se puede abrir sin conexion).
  *
  * Lo que se toca en la carta queda primero en "Por agregar" (borrador, se
  * guarda en el dispositivo). "Enviar a cocina" lo guarda en la cuenta y lo
@@ -10,11 +15,16 @@
 
   var raiz = document.getElementById('pedido');
   var idMesa = raiz.dataset.mesa;
+  var llevar = raiz.dataset.llevar;
   var puedeCobrar = raiz.dataset.cobrar === '1';
   var esAdmin = raiz.dataset.admin === '1';
+  var puedeDividir = raiz.dataset.dividir === '1';
+  var API = llevar ? '/api/llevar/' + llevar : '/api/mesas/' + idMesa;
+  var COLA = llevar ? 'llevar:' + llevar : idMesa;  // agrupa lo guardado sin conexion
   var CLAVE_CARTA = 'chef_carta_v1';
-  var CLAVE_PEDIDO = 'chef_pedido_v1_' + idMesa;
-  var CLAVE_BORRADOR = 'chef_borrador_v1_' + idMesa;
+  var CLAVE_PEDIDO = 'chef_pedido_v1_' + (llevar || idMesa);
+  var CLAVE_BORRADOR = 'chef_borrador_v1_' + (llevar || idMesa);
+  var CLAVE_CLIENTE = 'chef_cliente_v1_' + llevar;
   var ESTADOS = { pendiente: 'Sin enviar', enviado: 'En cocina', listo: 'Listo', entregado: 'Entregado', anulado: 'Anulado' };
 
   var carta = Chef.leer(CLAVE_CARTA, []);
@@ -53,10 +63,10 @@
     return p ? p.precio_venta : 0;
   }
 
-  /* Lineas guardadas en la cola sin conexion para esta mesa. */
+  /* Lineas guardadas en la cola sin conexion para este pedido. */
   function lineasEnCola() {
     var lineas = [];
-    Chef.pendientesDeMesa(idMesa).forEach(function (op) {
+    Chef.pendientesDeMesa(COLA).forEach(function (op) {
       if (!/\/items$/.test(op.url) || !op.cuerpo) return;
       op.cuerpo.items.forEach(function (i) {
         lineas.push({ nombre: nombreProducto(i.id_producto), cantidad: i.cantidad, nota: i.nota,
@@ -101,6 +111,10 @@
   }
 
   function agregar(p) {
+    if (detalle && detalle.pedido && (detalle.pedido.estado === 'cerrado' || detalle.pedido.estado === 'anulado')) {
+      Chef.mostrar('Este pedido ya está cerrado.', true);
+      return;
+    }
     var linea = borrador.find(function (l) { return l.id_producto === p.id_producto && !l.nota; });
     if (linea) linea.cantidad += 1;
     else borrador.push({ uuid: Chef.uuid(), id_producto: p.id_producto, nombre: p.nombre, precio: p.precio_venta, cantidad: 1, nota: '' });
@@ -111,13 +125,14 @@
   /* --- cuenta ---------------------------------------------------------- */
 
   function pintarCuenta() {
-    var mesa = detalle && detalle.mesa;
     var pedido = detalle && detalle.pedido;
-    $('titulo-mesa').textContent = 'Mesa ' + (mesa ? mesa.nombre : '');
+    var cerrado = !!pedido && (pedido.estado === 'cerrado' || pedido.estado === 'anulado');
+    $('titulo-mesa').textContent = titulo();
+    var ESTADO_PEDIDO = { abierto: 'Abierta', por_cobrar: 'Pidió la cuenta', cerrado: 'Pagado', anulado: 'Anulado' };
     $('info-pedido').textContent = pedido
-      ? (pedido.estado === 'por_cobrar' ? 'Pidió la cuenta' : 'Abierta') + ' desde las ' + pedido.abierto_en +
+      ? ESTADO_PEDIDO[pedido.estado] + (pedido.entregado ? ' y entregado' : '') + ' · desde las ' + pedido.abierto_en +
         ' · ' + (pedido.mesero || '') + (pedido.comensales ? ' · ' + pedido.comensales + ' personas' : '')
-      : 'Mesa libre. Toca un plato para empezar.';
+      : (llevar ? 'Pedido nuevo. Toca un plato para empezar.' : 'Mesa libre. Toca un plato para empezar.');
     if (!navigator.onLine) $('info-pedido').textContent += ' · sin conexión';
 
     var ul = $('lineas');
@@ -132,7 +147,7 @@
       info.appendChild(el('small', 'chip chip--' + i.estado, estado));
       li.appendChild(info);
       li.appendChild(el('span', 'linea__valor', Chef.pesos(i.subtotal)));
-      if (i.estado !== 'anulado' && (i.estado === 'pendiente' || esAdmin)) {
+      if (!cerrado && i.estado !== 'anulado' && (i.estado === 'pendiente' || esAdmin)) {
         li.appendChild(boton('Quitar', 'btn-link btn-link--peligro', function () { abrirAnular(i); }));
       }
       ul.appendChild(li);
@@ -178,22 +193,41 @@
     });
 
     $('total').textContent = Chef.pesos(total);
-    var hayCuenta = !!pedido;
-    $('btn-mover').hidden = !hayCuenta;
+    var hayCuenta = !!pedido && !cerrado;
+    $('btn-mover').hidden = !hayCuenta || !!llevar;
+    $('btn-entregar').hidden = !llevar || !pedido || pedido.entregado || pedido.estado === 'anulado';
     $('btn-anular-cuenta').hidden = !hayCuenta;
     $('btn-cobrar').hidden = !(puedeCobrar && hayCuenta);
+    $('btn-dividir').hidden = !(puedeCobrar && puedeDividir && hayCuenta);
     $('btn-precuenta').hidden = !hayCuenta;
+    $('btn-enviar').hidden = cerrado;
+    $('productos').classList.toggle('productos--bloqueados', cerrado);
+    if (llevar) $('bloque-cliente').hidden = cerrado;
     $('btn-guardar').hidden = borrador.length === 0;
     var porEnviar = borrador.length + (detalle ? detalle.sin_enviar : 0);
     $('btn-enviar').disabled = porEnviar === 0;
     $('btn-enviar').textContent = porEnviar ? 'Enviar a cocina' : 'Nada por enviar';
   }
 
+  function titulo() {
+    if (detalle && detalle.lugar) return detalle.lugar.titulo;
+    return llevar ? 'Para llevar' : 'Mesa';
+  }
+
+  function pintarCliente() {
+    if (!llevar) return;
+    var lugar = detalle && detalle.lugar;
+    var guardado = Chef.leer(CLAVE_CLIENTE, {});
+    $('cliente-nombre').value = guardado.cliente || (lugar && lugar.cliente) || '';
+    $('cliente-telefono').value = guardado.telefono || (lugar && lugar.telefono) || '';
+  }
+
   function cargar() {
-    return Chef.api('GET', '/api/mesas/' + idMesa + '/pedido').then(function (datos) {
+    return Chef.api('GET', API + '/pedido').then(function (datos) {
       if (!datos.ok) { Chef.mostrar(datos.msg || 'No se pudo cargar la mesa.', true); return; }
       detalle = datos;
       Chef.guardar(CLAVE_PEDIDO, detalle);
+      pintarCliente();
       pintarCuenta();
     }, function () { pintarCuenta(); });
   }
@@ -207,15 +241,19 @@
 
   /* --- acciones ------------------------------------------------------- */
 
-  function etiqueta(texto) { return 'Mesa ' + (detalle && detalle.mesa ? detalle.mesa.nombre : idMesa) + ': ' + texto; }
+  function etiqueta(texto) { return titulo() + ': ' + texto; }
 
   function guardarItems() {
     if (!borrador.length) return Promise.resolve(true);
     var cuerpo = { items: borrador.map(function (l) {
       return { id_producto: l.id_producto, cantidad: l.cantidad, nota: l.nota || null, uuid: l.uuid };
     }) };
+    if (llevar) {
+      cuerpo.cliente = $('cliente-nombre').value.trim() || null;
+      cuerpo.telefono = $('cliente-telefono').value.trim() || null;
+    }
     var n = borrador.reduce(function (s, l) { return s + l.cantidad; }, 0);
-    return Chef.enviar('POST', '/api/mesas/' + idMesa + '/items', cuerpo, { etiqueta: etiqueta(n + ' producto(s)'), mesa: idMesa })
+    return Chef.enviar('POST', API + '/items', cuerpo, { etiqueta: etiqueta(n + ' producto(s)'), mesa: COLA })
       .then(function (datos) {
         if (datos.offline) {
           borrador = []; guardarBorrador(); pintarCuenta();
@@ -225,7 +263,8 @@
         if (!datos.ok) { Chef.mostrar(datos.msg || 'No se pudo guardar.', true); return false; }
         detalle = datos;
         Chef.guardar(CLAVE_PEDIDO, detalle);
-        borrador = []; guardarBorrador(); pintarCuenta();
+        if (llevar) window.localStorage.removeItem(CLAVE_CLIENTE);
+        borrador = []; guardarBorrador(); pintarCliente(); pintarCuenta();
         if (datos.avisos && datos.avisos.length) Chef.mostrar('Ojo con el inventario: ' + datos.avisos.join(' '), true);
         return true;
       });
@@ -236,7 +275,7 @@
     btn.disabled = true;
     guardarItems().then(function (ok) {
       if (!ok) return null;
-      return Chef.enviar('POST', '/api/mesas/' + idMesa + '/comanda', null, { etiqueta: etiqueta('enviar a cocina'), mesa: idMesa })
+      return Chef.enviar('POST', API + '/comanda', null, { etiqueta: etiqueta('enviar a cocina'), mesa: COLA })
         .then(function (datos) {
           if (datos.offline) return;
           if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
@@ -260,7 +299,7 @@
       ultimasComandas.forEach(function (c) {
         var bloque = el('section', 'ticket');
         bloque.appendChild(el('h2', '', (c.estacion === 'bar' ? 'BAR' : 'COCINA') + ' #' + c.numero));
-        bloque.appendChild(el('p', '', 'Mesa ' + c.mesa + ' · ' + new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })));
+        bloque.appendChild(el('p', '', c.lugar + ' · ' + new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })));
         c.items.forEach(function (i) {
           bloque.appendChild(el('p', 'ticket__linea', i.cantidad + ' × ' + i.nombre));
           if (i.nota) bloque.appendChild(el('p', 'ticket__nota', '  → ' + i.nota));
@@ -273,7 +312,7 @@
   function imprimirPrecuenta(d) {
     imprimir(function (zona) {
       var t = el('section', 'ticket');
-      t.appendChild(el('h2', '', 'Precuenta · Mesa ' + d.mesa.nombre));
+      t.appendChild(el('h2', '', 'Precuenta · ' + d.lugar.titulo));
       t.appendChild(el('p', '', 'Documento sin valor fiscal'));
       d.items.forEach(function (i) {
         if (i.estado === 'anulado') return;
@@ -288,7 +327,7 @@
 
   function precuenta() {
     if (borrador.length) { Chef.mostrar('Primero envía o borra lo que está por agregar.', true); return; }
-    Chef.api('POST', '/api/mesas/' + idMesa + '/precuenta').then(function (datos) {
+    Chef.api('POST', API + '/precuenta').then(function (datos) {
       if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
       detalle = datos; Chef.guardar(CLAVE_PEDIDO, detalle); pintarCuenta();
       imprimirPrecuenta(datos);
@@ -318,7 +357,7 @@
       return;
     }
     if (!detalle || !detalle.pedido) return;
-    $('cobro-mesa').textContent = 'mesa ' + detalle.mesa.nombre;
+    $('cobro-mesa').textContent = titulo();
     $('cobro-total').textContent = Chef.pesos(detalle.total);
     $('cobro-propina').value = detalle.propina_sugerida;
     $('cobro-recibido').value = '';
@@ -339,17 +378,229 @@
       cuerpo.monto_efectivo = numero($('cobro-efectivo').value);
       cuerpo.monto_transferencia = numero($('cobro-transferencia').value);
     }
-    Chef.enviar('POST', '/api/mesas/' + idMesa + '/cobrar', cuerpo, { etiqueta: etiqueta('cobro'), mesa: idMesa })
-      .then(function (datos) {
-        if (datos.offline) {
-          Chef.mostrar('Sin conexión: el cobro quedó guardado y se registra al volver internet.', false);
-          return;
-        }
-        if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
-        Chef.mostrar(datos.msg, false);
-        window.localStorage.removeItem(CLAVE_PEDIDO);
-        window.setTimeout(function () { window.location.href = '/mesas'; }, 900);
+    Chef.enviar('POST', API + '/cobrar', cuerpo, { etiqueta: etiqueta('cobro'), mesa: COLA }).then(alCobrar);
+  }
+
+  function alCobrar(datos) {
+    if (datos.offline) {
+      Chef.mostrar('Sin conexión: el cobro quedó guardado y se registra al volver internet.', false);
+      return;
+    }
+    if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
+    Chef.mostrar(datos.msg, false);
+    window.localStorage.removeItem(CLAVE_PEDIDO);
+    window.setTimeout(function () { window.location.href = '/mesas'; }, 900);
+  }
+
+  /* --- cuenta dividida ------------------------------------------------- *
+   * Por productos: cada cuenta toma unidades de las lineas (una linea de 2
+   * se puede partir 1 y 1) y se cobra como una venta propia. En partes
+   * iguales el total se parte en N y queda una sola venta. El servidor
+   * repite las cuentas; aqui solo se muestran. */
+
+  var division = null;
+
+  function nuevaParte(n) { return { etiqueta: 'Cuenta ' + n, metodo: 'efectivo', propina: null, items: {} }; }
+
+  function lineasDivisibles() { return detalle.items.filter(function (i) { return i.estado !== 'anulado'; }); }
+
+  function repartido(idItem) {
+    return division.partes.reduce(function (s, p) { return s + (p.items[idItem] || 0); }, 0);
+  }
+
+  function redondear(x) { return Math.round(x * 1000) / 1000; }
+
+  function montosPartes() {
+    if (division.modo === 'iguales') {
+      var n = division.partes.length;
+      var base = Math.floor(detalle.total / n);
+      var sobra = detalle.total - base * n;
+      return division.partes.map(function (_, i) { return base + (i < sobra ? 1 : 0); });
+    }
+    return division.partes.map(function (p) {
+      return lineasDivisibles().reduce(function (s, i) {
+        return s + Math.round((p.items[i.id_item] || 0) * i.precio_unitario);
+      }, 0);
+    });
+  }
+
+  function propinaDe(p, monto) { return p.propina !== null ? p.propina : Math.round(monto * 0.1 / 100) * 100; }
+
+  function abrirDividir() {
+    if (borrador.length || (detalle && detalle.sin_enviar)) {
+      Chef.mostrar('Hay productos sin enviar a cocina. Envíalos o quítalos antes de cobrar.', true);
+      return;
+    }
+    if (!detalle || !detalle.pedido) return;
+    if (!division || division.id_pedido !== detalle.pedido.id_pedido) {
+      var n = Math.max(2, Math.min(20, detalle.pedido.comensales || 2));
+      division = { id_pedido: detalle.pedido.id_pedido, modo: 'items', activa: 0, partes: [] };
+      for (var k = 1; k <= n; k++) division.partes.push(nuevaParte(k));
+    }
+    $('div-total').textContent = 'Total ' + Chef.pesos(detalle.total);
+    pintarDivision();
+    $('dlg-dividir').showModal();
+  }
+
+  function pintarDivision() {
+    var porItems = division.modo === 'items';
+    document.querySelectorAll('#form-dividir [data-modo]').forEach(function (b) {
+      b.classList.toggle('pestana--activa', b.dataset.modo === division.modo);
+    });
+    $('div-items').hidden = !porItems;
+    $('div-iguales').hidden = porItems;
+    $('div-n').textContent = division.partes.length;
+    if (division.activa >= division.partes.length) division.activa = 0;
+
+    if (porItems) {
+      var nav = $('div-cuentas');
+      nav.textContent = '';
+      division.partes.forEach(function (p, idx) {
+        nav.appendChild(boton(p.etiqueta, 'pestana' + (idx === division.activa ? ' pestana--activa' : ''), function () {
+          division.activa = idx; pintarDivision();
+        }));
       });
+      if (division.partes.length < 20) {
+        nav.appendChild(boton('+ Persona', 'pestana', function () {
+          division.partes.push(nuevaParte(division.partes.length + 1));
+          division.activa = division.partes.length - 1;
+          pintarDivision();
+        }));
+      }
+      var activa = division.partes[division.activa];
+      $('div-activa').textContent = 'Paga ' + activa.etiqueta;
+      var sin = $('div-sin');
+      var asignados = $('div-asignados');
+      sin.textContent = '';
+      asignados.textContent = '';
+      lineasDivisibles().forEach(function (i) {
+        var queda = redondear(i.cantidad - repartido(i.id_item));
+        if (queda > 0) {
+          var li = el('li', 'linea');
+          li.appendChild(el('span', 'linea__info', queda + ' × ' + i.nombre));
+          li.appendChild(el('span', 'linea__valor', Chef.pesos(queda * i.precio_unitario)));
+          li.addEventListener('click', function () {
+            activa.items[i.id_item] = redondear((activa.items[i.id_item] || 0) + Math.min(1, queda));
+            pintarDivision();
+          });
+          sin.appendChild(li);
+        }
+        var mia = activa.items[i.id_item] || 0;
+        if (mia > 0) {
+          var li2 = el('li', 'linea');
+          li2.appendChild(el('span', 'linea__info', mia + ' × ' + i.nombre));
+          li2.appendChild(el('span', 'linea__valor', Chef.pesos(mia * i.precio_unitario)));
+          li2.addEventListener('click', function () {
+            var resto = redondear(mia - Math.min(1, mia));
+            if (resto > 0) activa.items[i.id_item] = resto; else delete activa.items[i.id_item];
+            pintarDivision();
+          });
+          asignados.appendChild(li2);
+        }
+      });
+      if (!sin.children.length) sin.appendChild(el('li', 'muted', 'Todo repartido.'));
+      if (!asignados.children.length) asignados.appendChild(el('li', 'muted', 'Toca productos de la izquierda.'));
+    }
+
+    var montos = montosPartes();
+    var lista = $('div-partes');
+    lista.textContent = '';
+    var aPagar = 0;
+    division.partes.forEach(function (p, idx) {
+      var monto = montos[idx];
+      var propina = propinaDe(p, monto);
+      aPagar += monto + propina;
+      var li = el('li', 'linea parte');
+      var nombre = el('input', 'parte__nombre');
+      nombre.value = p.etiqueta;
+      nombre.maxLength = 40;
+      nombre.setAttribute('aria-label', 'Nombre de la cuenta');
+      nombre.addEventListener('change', function () { p.etiqueta = nombre.value.trim() || 'Cuenta ' + (idx + 1); pintarDivision(); });
+      li.appendChild(nombre);
+      li.appendChild(el('span', 'linea__valor', Chef.pesos(monto)));
+      var prop = el('input');
+      prop.inputMode = 'numeric';
+      prop.value = propina;
+      prop.title = 'Propina';
+      prop.setAttribute('aria-label', 'Propina de ' + p.etiqueta);
+      prop.addEventListener('change', function () { p.propina = numero(prop.value); pintarDivision(); });
+      li.appendChild(el('small', 'muted', '+ propina'));
+      li.appendChild(prop);
+      var metodo = el('select');
+      metodo.setAttribute('aria-label', 'Método de pago de ' + p.etiqueta);
+      [['efectivo', 'Efectivo'], ['nequi', 'Nequi / transferencia'], ['tarjeta', 'Tarjeta']].forEach(function (m) {
+        var o = el('option', '', m[1]);
+        o.value = m[0];
+        o.selected = p.metodo === m[0];
+        metodo.appendChild(o);
+      });
+      metodo.addEventListener('change', function () { p.metodo = metodo.value; });
+      li.appendChild(metodo);
+      li.appendChild(el('strong', '', '= ' + Chef.pesos(monto + propina)));
+      if (division.partes.length > 2 && division.modo === 'items') {
+        li.appendChild(boton('Quitar', 'btn-link btn-link--peligro', function () {
+          division.partes.splice(idx, 1);
+          pintarDivision();
+        }));
+      }
+      lista.appendChild(li);
+    });
+    $('div-apagar').textContent = Chef.pesos(aPagar);
+    var falta = division.modo === 'items' && lineasDivisibles().some(function (i) { return redondear(i.cantidad - repartido(i.id_item)) !== 0; });
+    var vacia = division.modo === 'items' && montos.some(function (m, idx) { return !Object.keys(division.partes[idx].items).length; });
+    $('div-cobrar').disabled = falta || vacia;
+    $('div-cobrar').textContent = falta ? 'Falta repartir' : (vacia ? 'Hay una cuenta vacía' : 'Cobrar las cuentas');
+  }
+
+  function cambiarPersonas(delta) {
+    var n = Math.max(2, Math.min(20, division.partes.length + delta));
+    while (division.partes.length < n) division.partes.push(nuevaParte(division.partes.length + 1));
+    division.partes.length = n;
+    pintarDivision();
+  }
+
+  function cobrarDividido() {
+    var montos = montosPartes();
+    var cuerpo = {
+      modo: division.modo,
+      uuid: Chef.uuid(),
+      id_pedido: detalle.pedido.id_pedido,
+      partes: division.partes.map(function (p, idx) {
+        var parte = { etiqueta: p.etiqueta, metodo: p.metodo, propina: propinaDe(p, montos[idx]) };
+        if (division.modo === 'items') {
+          parte.items = Object.keys(p.items).map(function (id) { return { id_item: Number(id), cantidad: p.items[id] }; });
+        }
+        return parte;
+      })
+    };
+    Chef.enviar('POST', API + '/cobrar-dividido', cuerpo, { etiqueta: etiqueta('cobro dividido'), mesa: COLA }).then(function (datos) {
+      if (datos.ok) division = null;
+      alCobrar(datos);
+    });
+  }
+
+  function imprimirDivision() {
+    var montos = montosPartes();
+    imprimir(function (zona) {
+      division.partes.forEach(function (p, idx) {
+        var t = el('section', 'ticket');
+        t.appendChild(el('h2', '', 'Precuenta · ' + titulo()));
+        t.appendChild(el('p', '', p.etiqueta + ' · documento sin valor fiscal'));
+        if (division.modo === 'items') {
+          lineasDivisibles().forEach(function (i) {
+            var cant = p.items[i.id_item];
+            if (cant) t.appendChild(el('p', 'ticket__linea', cant + ' × ' + i.nombre + '  ' + Chef.pesos(cant * i.precio_unitario)));
+          });
+        } else {
+          t.appendChild(el('p', '', 'Parte ' + (idx + 1) + ' de ' + division.partes.length + ' de ' + Chef.pesos(detalle.total)));
+        }
+        var propina = propinaDe(p, montos[idx]);
+        t.appendChild(el('p', 'ticket__total', 'Total ' + Chef.pesos(montos[idx])));
+        t.appendChild(el('p', '', 'Propina (voluntaria) ' + Chef.pesos(propina)));
+        t.appendChild(el('p', 'ticket__total', 'A pagar ' + Chef.pesos(montos[idx] + propina)));
+        zona.appendChild(t);
+      });
+    });
   }
 
   /* --- mover y anular -------------------------------------------------- */
@@ -370,7 +621,7 @@
 
   function mover() {
     var destino = $('mover-destino').value;
-    Chef.api('POST', '/api/mesas/' + idMesa + '/mover', { id_mesa_destino: destino }).then(function (datos) {
+    Chef.api('POST', API + '/mover', { id_mesa_destino: destino }).then(function (datos) {
       if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
       window.location.href = '/mesas/' + destino;
     }, function () { Chef.mostrar('Para mover mesas se necesita conexión.', true); });
@@ -383,7 +634,7 @@
     var enviado = item && item.estado !== 'pendiente';
     $('anular-titulo').textContent = item ? 'Quitar ' + item.nombre : 'Anular la cuenta';
     $('anular-ayuda').textContent = !item
-      ? 'La mesa queda libre sin cobrar. Solo se puede si nada fue a cocina.'
+      ? (llevar ? 'El pedido se cancela sin cobrar.' : 'La mesa queda libre sin cobrar.') + ' Solo se puede si nada fue a cocina.'
       : (enviado ? 'Ya fue a cocina. Si se cocinó, queda como pérdida (merma).' : 'Aún no fue a cocina: se quita sin costo.');
     $('bloque-devolver').hidden = !enviado;
     $('anular-devolver').checked = false;
@@ -394,13 +645,22 @@
 
   function anular() {
     var cuerpo = { motivo: $('anular-motivo').value.trim(), devolver: $('anular-devolver').checked };
-    var url = anulando ? '/api/pedido-items/' + anulando.id_item + '/anular' : '/api/mesas/' + idMesa + '/anular';
+    var url = anulando ? '/api/pedido-items/' + anulando.id_item + '/anular' : API + '/anular';
     Chef.api('POST', url, cuerpo).then(function (datos) {
       if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
       Chef.mostrar(datos.msg, false);
       if (!anulando) { window.location.href = '/mesas'; return; }
       cargar();
     }, function () { Chef.mostrar('Para anular se necesita conexión.', true); });
+  }
+
+  function entregar() {
+    Chef.enviar('POST', API + '/entregar', null, { etiqueta: etiqueta('entregado'), mesa: COLA }).then(function (datos) {
+      if (datos.offline) { Chef.mostrar('Sin conexión: quedó guardado y se marca al volver internet.', false); return; }
+      if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
+      Chef.mostrar(datos.msg, false);
+      window.setTimeout(function () { window.location.href = '/mesas'; }, 700);
+    });
   }
 
   function alCerrar(dlg, accion) {
@@ -415,6 +675,21 @@
   $('btn-cobrar').addEventListener('click', abrirCobro);
   $('btn-mover').addEventListener('click', abrirMover);
   $('btn-anular-cuenta').addEventListener('click', function () { abrirAnular(null); });
+  $('btn-entregar').addEventListener('click', entregar);
+  $('btn-dividir').addEventListener('click', abrirDividir);
+  $('div-menos').addEventListener('click', function () { cambiarPersonas(-1); });
+  $('div-mas').addEventListener('click', function () { cambiarPersonas(1); });
+  $('div-imprimir').addEventListener('click', imprimirDivision);
+  document.querySelectorAll('#form-dividir [data-modo]').forEach(function (b) {
+    b.addEventListener('click', function () { division.modo = b.dataset.modo; pintarDivision(); });
+  });
+  if (llevar) {
+    ['cliente-nombre', 'cliente-telefono'].forEach(function (id) {
+      $(id).addEventListener('change', function () {
+        Chef.guardar(CLAVE_CLIENTE, { cliente: $('cliente-nombre').value.trim(), telefono: $('cliente-telefono').value.trim() });
+      });
+    });
+  }
   ['cobro-propina', 'cobro-metodo', 'cobro-efectivo', 'cobro-recibido'].forEach(function (id) {
     $(id).addEventListener('input', recalcularCobro);
   });
@@ -422,10 +697,12 @@
   $('propina-cero').addEventListener('click', function () { $('cobro-propina').value = 0; recalcularCobro(); });
   alCerrar('dlg-cobro', cobrar);
   alCerrar('dlg-mover', mover);
+  alCerrar('dlg-dividir', cobrarDividido);
   alCerrar('dlg-anular', anular);
   document.addEventListener('chef:sincronizado', cargar);
 
   pintarCarta();
+  pintarCliente();
   pintarCuenta();
   cargarCarta();
   cargar();

@@ -4,14 +4,15 @@ Todo trabaja sobre la sede de la sesion (g.id_sede): un mesero solo ve y
 toca las mesas de su sede, y un Admin las de la sede que eligio al entrar.
 
 Quien hace que:
-  Mesero, Cajero, Admin  plano, pedido, enviar a cocina, precuenta, mover
-  Cajero, Admin          cobrar y caja
+  Mesero, Cajero, Admin  plano, pedido, para llevar, enviar a cocina,
+                         precuenta, mover
+  Cajero, Admin          cobrar, cuenta dividida (plan con "cuenta_dividida") y caja
   Cocina, Admin          pantalla de cocina (plan con "cocina")
   Admin                  carta, inventario, mesas y zonas
 """
 from __future__ import annotations
 
-from flask import Blueprint, g, jsonify, render_template, request, session
+from flask import Blueprint, g, jsonify, redirect, render_template, request, session, url_for
 
 from app.services import (
     caja_service,
@@ -23,6 +24,7 @@ from app.services import (
     plan_service,
 )
 from app.services.errores import ErrorServicio
+from app.services.pedidos_service import Mesa
 from app.services.plan_service import requiere_funcion
 from app.utils.decorators import login_required, roles_required
 
@@ -73,8 +75,10 @@ def pedido_page(id_mesa):
     return render_template(
         "salon/pedido.html",
         id_mesa=id_mesa,
+        llevar=None,
         puede_cobrar=session.get("rol") in CAJA,
         es_admin=session.get("rol") == "Admin",
+        dividir=plan_service.tiene_funcion(g.plan_id, "cuenta_dividida"),
     )
 
 
@@ -252,7 +256,7 @@ def api_plano():
 @roles_required(*SALON)
 def api_pedido(id_mesa):
     try:
-        return _ok(**pedidos_service.ver(g.id_sede, id_mesa))
+        return _ok(**pedidos_service.ver(g.id_sede, Mesa(id_mesa)))
     except _ERRORES as exc:
         return _error(exc)
 
@@ -263,7 +267,7 @@ def api_pedido(id_mesa):
 def api_pedido_agregar(id_mesa):
     id_tienda, id_sede, id_usuario = _ctx()
     try:
-        detalle = pedidos_service.agregar_items(id_tienda, id_sede, id_usuario, id_mesa, _json())
+        detalle = pedidos_service.agregar_items(id_tienda, id_sede, id_usuario, Mesa(id_mesa), _json())
     except _ERRORES as exc:
         return _error(exc)
     return _ok(**detalle)
@@ -275,7 +279,7 @@ def api_pedido_agregar(id_mesa):
 def api_pedido_comanda(id_mesa):
     id_tienda, id_sede, id_usuario = _ctx()
     try:
-        resultado = pedidos_service.enviar_comanda(id_tienda, id_sede, id_usuario, id_mesa)
+        resultado = pedidos_service.enviar_comanda(id_tienda, id_sede, id_usuario, Mesa(id_mesa))
     except _ERRORES as exc:
         return _error(exc)
     return _ok(**resultado)
@@ -298,7 +302,7 @@ def api_item_anular(id_item):
 @roles_required(*SALON)
 def api_pedido_precuenta(id_mesa):
     try:
-        return _ok(**pedidos_service.precuenta(g.id_sede, id_mesa))
+        return _ok(**pedidos_service.precuenta(g.id_sede, Mesa(id_mesa)))
     except _ERRORES as exc:
         return _error(exc)
 
@@ -321,7 +325,7 @@ def api_pedido_mover(id_mesa):
 def api_pedido_anular(id_mesa):
     id_tienda, id_sede, id_usuario = _ctx()
     try:
-        pedidos_service.anular_pedido(id_tienda, id_sede, id_usuario, id_mesa, _json())
+        pedidos_service.anular_pedido(id_tienda, id_sede, id_usuario, Mesa(id_mesa), _json())
     except _ERRORES as exc:
         return _error(exc)
     return _ok(msg="Cuenta anulada. La mesa quedó libre.")
@@ -333,10 +337,146 @@ def api_pedido_anular(id_mesa):
 def api_pedido_cobrar(id_mesa):
     id_tienda, id_sede, id_usuario = _ctx()
     try:
-        venta = pedidos_service.cobrar(id_tienda, id_sede, id_usuario, id_mesa, _json())
+        venta = pedidos_service.cobrar(id_tienda, id_sede, id_usuario, Mesa(id_mesa), _json())
     except _ERRORES as exc:
         return _error(exc)
     return _ok(msg=f"Cobrado. Venta {venta['numero_venta']}.", venta=venta)
+
+
+@salon.post("/api/mesas/<int:id_mesa>/cobrar-dividido")
+@login_required
+@roles_required(*CAJA)
+@requiere_funcion("cuenta_dividida")
+def api_pedido_cobrar_dividido(id_mesa):
+    id_tienda, id_sede, id_usuario = _ctx()
+    try:
+        cobro = pedidos_service.cobrar_dividido(id_tienda, id_sede, id_usuario, Mesa(id_mesa), _json())
+    except _ERRORES as exc:
+        return _error(exc)
+    return _ok(msg=_msg_dividido(cobro), cobro=cobro)
+
+
+def _msg_dividido(cobro: dict) -> str:
+    ventas = cobro["ventas"]
+    return f"Cobrado en {len(cobro['partes'])} partes. Venta{'s' if len(ventas) > 1 else ''} {', '.join(ventas)}."
+
+
+# --- para llevar -------------------------------------------------------------
+# Mismas operaciones que una mesa, por el uuid que el dispositivo le pone al
+# pedido (se puede abrir sin conexion). El pedido se crea con el primer plato.
+
+def _llevar(uuid: str):
+    return pedidos_service.llevar(uuid)
+
+
+@salon.get("/llevar/<uuid>")
+@login_required
+@roles_required(*SALON)
+def llevar_page(uuid):
+    try:
+        lugar = _llevar(uuid)
+    except _ERRORES:
+        return redirect(url_for("salon.mesas_page"))
+    return render_template(
+        "salon/pedido.html",
+        llevar=lugar.uuid,
+        id_mesa=None,
+        puede_cobrar=session.get("rol") in CAJA,
+        es_admin=session.get("rol") == "Admin",
+        dividir=plan_service.tiene_funcion(g.plan_id, "cuenta_dividida"),
+    )
+
+
+@salon.get("/api/llevar/<uuid>/pedido")
+@login_required
+@roles_required(*SALON)
+def api_llevar_pedido(uuid):
+    try:
+        return _ok(**pedidos_service.ver(g.id_sede, _llevar(uuid)))
+    except _ERRORES as exc:
+        return _error(exc)
+
+
+@salon.post("/api/llevar/<uuid>/items")
+@login_required
+@roles_required(*SALON)
+def api_llevar_agregar(uuid):
+    id_tienda, id_sede, id_usuario = _ctx()
+    try:
+        detalle = pedidos_service.agregar_items(id_tienda, id_sede, id_usuario, _llevar(uuid), _json())
+    except _ERRORES as exc:
+        return _error(exc)
+    return _ok(**detalle)
+
+
+@salon.post("/api/llevar/<uuid>/comanda")
+@login_required
+@roles_required(*SALON)
+def api_llevar_comanda(uuid):
+    id_tienda, id_sede, id_usuario = _ctx()
+    try:
+        resultado = pedidos_service.enviar_comanda(id_tienda, id_sede, id_usuario, _llevar(uuid))
+    except _ERRORES as exc:
+        return _error(exc)
+    return _ok(**resultado)
+
+
+@salon.post("/api/llevar/<uuid>/precuenta")
+@login_required
+@roles_required(*SALON)
+def api_llevar_precuenta(uuid):
+    try:
+        return _ok(**pedidos_service.precuenta(g.id_sede, _llevar(uuid)))
+    except _ERRORES as exc:
+        return _error(exc)
+
+
+@salon.post("/api/llevar/<uuid>/anular")
+@login_required
+@roles_required(*SALON)
+def api_llevar_anular(uuid):
+    id_tienda, id_sede, id_usuario = _ctx()
+    try:
+        pedidos_service.anular_pedido(id_tienda, id_sede, id_usuario, _llevar(uuid), _json())
+    except _ERRORES as exc:
+        return _error(exc)
+    return _ok(msg="Pedido para llevar anulado.")
+
+
+@salon.post("/api/llevar/<uuid>/entregar")
+@login_required
+@roles_required(*SALON)
+def api_llevar_entregar(uuid):
+    try:
+        pedidos_service.entregar_llevar(g.id_sede, _llevar(uuid))
+    except _ERRORES as exc:
+        return _error(exc)
+    return _ok(msg="Entregado al cliente.")
+
+
+@salon.post("/api/llevar/<uuid>/cobrar")
+@login_required
+@roles_required(*CAJA)
+def api_llevar_cobrar(uuid):
+    id_tienda, id_sede, id_usuario = _ctx()
+    try:
+        venta = pedidos_service.cobrar(id_tienda, id_sede, id_usuario, _llevar(uuid), _json())
+    except _ERRORES as exc:
+        return _error(exc)
+    return _ok(msg=f"Cobrado. Venta {venta['numero_venta']}.", venta=venta)
+
+
+@salon.post("/api/llevar/<uuid>/cobrar-dividido")
+@login_required
+@roles_required(*CAJA)
+@requiere_funcion("cuenta_dividida")
+def api_llevar_cobrar_dividido(uuid):
+    id_tienda, id_sede, id_usuario = _ctx()
+    try:
+        cobro = pedidos_service.cobrar_dividido(id_tienda, id_sede, id_usuario, _llevar(uuid), _json())
+    except _ERRORES as exc:
+        return _error(exc)
+    return _ok(msg=_msg_dividido(cobro), cobro=cobro)
 
 
 # --- cocina ------------------------------------------------------------------

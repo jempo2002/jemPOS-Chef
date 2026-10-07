@@ -196,6 +196,20 @@ details[open] { flex-basis: 100%; }
 .botones-cuenta { display: grid; gap: 0.5rem; }
 
 .dialogo { border: 0; border-radius: var(--radio-lg); padding: 1.25rem; width: min(30rem, calc(100vw - 2rem)); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25); }
+.productos--bloqueados { opacity: 0.45; }
+.dialogo--ancho { width: min(46rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; }
+.dividir-columnas { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.lineas--tocables .linea { cursor: pointer; padding-inline: 0.35rem; border-radius: var(--radio); }
+.lineas--tocables .linea:hover { background: var(--primario-suave); }
+.parte { flex-wrap: wrap; }
+.parte input { width: 6rem; min-height: 36px; }
+.parte .parte__nombre { width: 8rem; }
+.parte select { min-height: 36px; }
+.cliente-llevar label { flex: 1 1 10rem; }
+.seccion-llevar { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-top: 1.75rem; }
+.seccion-llevar h2 { margin: 0; }
+.mesa--cerrado { border-color: var(--ok); background: var(--ok-suave); }
+.mesa--cerrado .mesa__estado { color: var(--ok); }
 .dialogo::backdrop { background: rgba(18, 15, 13, 0.45); }
 .fila-total { display: flex; justify-content: space-between; gap: 0.5rem; margin: 0; font-size: 1.05rem; flex-wrap: wrap; }
 
@@ -241,6 +255,7 @@ details[open] { flex-basis: 100%; }
 
 /* Tablas a tarjetas en el movil, como el Inventario de jemPOS. */
 @media (max-width: 40rem) {
+  .dividir-columnas { grid-template-columns: 1fr; }
   .tabla--tarjetas thead { display: none; }
   .tabla--tarjetas, .tabla--tarjetas tbody, .tabla--tarjetas tr, .tabla--tarjetas td { display: block; width: 100%; }
   .tabla--tarjetas tr { border: 1px solid var(--borde); border-radius: var(--radio); padding: 0.5rem; margin-bottom: 0.6rem; }

@@ -21,6 +21,12 @@
   Esta sede todavía no tiene mesas.
   {% if usuario.rol == 'Admin' %}<a href="{{ url_for('salon.configurar_mesas_page') }}">Crea las mesas</a>.{% else %}Pide al administrador que las cree.{% endif %}
 </p>
+<div class="seccion-llevar">
+  <h2>Para llevar</h2>
+  <button class="btn btn--primario" type="button" id="btn-nuevo-llevar">Nuevo para llevar</button>
+</div>
+<section class="plano" id="llevar" aria-live="polite"></section>
+<p class="muted vacio" id="sin-llevar" hidden>No hay pedidos para llevar pendientes.</p>
 <p class="leyenda muted">
   <span class="punto punto--libre"></span> Libre
   <span class="punto punto--abierto"></span> Ocupada
