@@ -575,3 +575,20 @@ a { color: inherit; }
 .cta-final__title { font-weight: 900; letter-spacing: -0.035em; }
 .marca-claro { color: #fdba74; text-decoration: underline; text-decoration-thickness: 0.1em; text-underline-offset: 0.18em; text-decoration-color: #f59e0b; }
 .cta-final__text { color: #fff; }
+
+/* Implementacion (pago unico) */
+.implementacion {
+  display: grid; justify-items: center; gap: 0.75rem; margin-top: 2rem; padding: 2rem 1.25rem;
+  text-align: center; background: var(--color-primary-soft);
+  border: 1px solid var(--color-primary-line); border-radius: var(--radius-lg);
+}
+.implementacion__titulo { font-size: 1.4rem; font-weight: 900; letter-spacing: -0.02em; }
+.implementacion__texto, .implementacion__nota { max-width: 36rem; color: #2e2a26; }
+.implementacion__nota { font-size: 0.88rem; font-weight: 600; }
+.implementacion__lista { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; }
+.implementacion__lista li {
+  display: grid; padding: 0.7rem 1.1rem; background: var(--color-surface);
+  border: 1px solid var(--color-primary-line); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm); font-size: 0.9rem; color: #2e2a26;
+}
+.implementacion__lista strong { font-size: 1.35rem; font-weight: 900; color: var(--color-primary); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
