@@ -78,7 +78,8 @@ def db(base):
         "usuarios", "sedes", "tiendas", "auditoria", "categorias", "productos", "stock_sedes",
         "movimientos_inventario", "turnos_caja", "ventas", "detalle_ventas", "consecutivos", "zonas",
         "mesas", "pedidos", "pedido_items", "comandas", "mermas", "insumos", "stock_insumos_sedes",
-        "recetas_productos", "pedido_cuentas", "pedido_cuenta_items", "gastos_caja",
+        "recetas_productos", "pedido_cuentas", "pedido_cuenta_items", "gastos_caja", "domiciliarios",
+        "pedido_domicilios",
     ):
         cur.execute(f"TRUNCATE `{tabla}`")
     cur.execute("SET FOREIGN_KEY_CHECKS = 1")

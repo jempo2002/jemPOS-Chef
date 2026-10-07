@@ -95,6 +95,7 @@ def create_app() -> Flask:
 
     from app.routes.auth import auth
     from app.routes.core import core
+    from app.routes.domicilios import domicilios
     from app.routes.master import master
     from app.routes.recetas import recetas
     from app.routes.restaurante import restaurante
@@ -102,6 +103,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth)
     app.register_blueprint(core)
+    app.register_blueprint(domicilios)
     app.register_blueprint(master)
     app.register_blueprint(recetas)
     app.register_blueprint(restaurante)

@@ -30,6 +30,11 @@ conexion no duplica nada.
 Un para llevar vive igual que una mesa (pedidos.tipo = 'llevar', sin mesa).
 Se puede cobrar antes de que la cocina termine; sale de la lista cuando se
 marca entregado al cliente.
+
+Un domicilio es un para llevar con direccion (pedidos.tipo = 'domicilio' y
+su fila en pedido_domicilios): usa las mismas rutas por uuid. Despacharlo y
+recibir la plata del domiciliario esta en domicilios_service. Mientras va en
+camino no se le agregan platos ni se cobra aqui: se liquida en Caja.
 """
 from __future__ import annotations
 
@@ -120,24 +125,56 @@ def _pedido_de_mesa(cur, id_sede: int, id_mesa: int, bloquear: bool = True) -> d
 
 def _pedido_llevar(cur, id_sede: int, uuid: str, bloquear: bool = True) -> dict | None:
     cur.execute(
-        _COLUMNAS + "WHERE uuid_cliente = %s AND id_sede = %s AND tipo = 'llevar'" + (" FOR UPDATE" if bloquear else ""),
+        _COLUMNAS + "WHERE uuid_cliente = %s AND id_sede = %s AND tipo IN ('llevar', 'domicilio')"
+        + (" FOR UPDATE" if bloquear else ""),
         (uuid, id_sede),
     )
     return cur.fetchone()
 
 
-def _sitio_llevar(uuid: str, pedido: dict | None) -> dict:
+def fila_domicilio(cur, id_pedido: int, bloquear: bool = False) -> dict | None:
+    cur.execute(
+        "SELECT d.id_pedido, d.direccion, d.estado, d.metodo_pago, d.paga_con, d.id_domiciliario, "
+        "m.nombre AS domiciliario, d.despachado_en, d.id_venta "
+        "FROM pedido_domicilios d LEFT JOIN domiciliarios m ON m.id_domiciliario = d.id_domiciliario "
+        "WHERE d.id_pedido = %s" + (" FOR UPDATE" if bloquear else ""),
+        (id_pedido,),
+    )
+    return cur.fetchone()
+
+
+def _sitio_llevar(cur, uuid: str, pedido: dict | None) -> dict:
     numero = pedido["numero_llevar"] if pedido else None
     cliente = pedido["cliente_nombre"] if pedido else None
-    titulo = "Para llevar" + (f" #{numero}" if numero else "") + (f" · {cliente}" if cliente else "")
-    return {
-        "tipo": "llevar",
+    tipo = pedido["tipo"] if pedido else "llevar"
+    nombre_tipo = "Domicilio" if tipo == "domicilio" else "Para llevar"
+    titulo = nombre_tipo + (f" #{numero}" if numero else "") + (f" · {cliente}" if cliente else "")
+    sitio = {
+        "tipo": tipo,
         "uuid": uuid,
         "nombre": f"#{numero}" if numero else "nuevo",
         "cliente": cliente,
         "telefono": pedido["cliente_telefono"] if pedido else None,
         "titulo": titulo,
     }
+    if tipo == "domicilio":
+        dom = fila_domicilio(cur, pedido["id_pedido"]) or {}
+        sitio["domicilio"] = {
+            "direccion": dom.get("direccion"),
+            "estado": dom.get("estado"),
+            "metodo_pago": dom.get("metodo_pago"),
+            "paga_con": float(dom["paga_con"]) if dom.get("paga_con") is not None else None,
+            "domiciliario": dom.get("domiciliario"),
+        }
+    return sitio
+
+
+def _en_camino(cur, pedido: dict) -> bool:
+    """El domicilio ya salio con el domiciliario (y no se ha liquidado)."""
+    if pedido["tipo"] != "domicilio":
+        return False
+    dom = fila_domicilio(cur, pedido["id_pedido"])
+    return bool(dom) and dom["estado"] in ("despachado", "entregado")
 
 
 def _ubicar(cur, id_sede: int, lugar: Mesa | Llevar, bloquear: bool = True) -> tuple[dict, dict | None]:
@@ -151,7 +188,7 @@ def _ubicar(cur, id_sede: int, lugar: Mesa | Llevar, bloquear: bool = True) -> t
         sitio = {"tipo": "mesa", **mesa, "titulo": nombre if nombre.lower().startswith("mesa") else f"Mesa {nombre}"}
         return sitio, _pedido_de_mesa(cur, id_sede, lugar.id_mesa, bloquear)
     pedido = _pedido_llevar(cur, id_sede, lugar.uuid, bloquear)
-    return _sitio_llevar(lugar.uuid, pedido), pedido
+    return _sitio_llevar(cur, lugar.uuid, pedido), pedido
 
 
 def _activo(sitio: dict, pedido: dict | None) -> dict:
@@ -267,6 +304,8 @@ def agregar_items(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | L
     comensales = parse_int(comensales, "Comensales", min_value=1, max_value=99) if comensales not in (None, "") else None
     cliente = sanitize_optional_text(data.get("cliente"), "El nombre del cliente", max_len=80)
     telefono = _telefono(data.get("telefono"))
+    domicilio = isinstance(lugar, Llevar) and parse_bool(data.get("domicilio") or False)
+    direccion = sanitize_optional_text(data.get("direccion"), "La dirección", max_len=160)
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
@@ -279,15 +318,28 @@ def agregar_items(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | L
                     (id_tienda, id_sede, lugar.id_mesa, id_usuario, comensales),
                 )
             else:
-                numero = caja_service.siguiente_consecutivo(cur, id_tienda, f"llevar:{id_sede}")
+                if domicilio and not direccion:
+                    raise ValueError("Escribe la dirección del domicilio.")
+                tipo = "domicilio" if domicilio else "llevar"
+                numero = caja_service.siguiente_consecutivo(cur, id_tienda, f"{tipo}:{id_sede}")
                 cur.execute(
                     "INSERT INTO pedidos (id_tienda, id_sede, tipo, numero_llevar, cliente_nombre, cliente_telefono, "
-                    "uuid_cliente, id_mesero, comensales) VALUES (%s, %s, 'llevar', %s, %s, %s, %s, %s, %s)",
-                    (id_tienda, id_sede, numero, cliente, telefono, lugar.uuid, id_usuario, comensales),
+                    "uuid_cliente, id_mesero, comensales) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (id_tienda, id_sede, tipo, numero, cliente, telefono, lugar.uuid, id_usuario, comensales),
                 )
+                if domicilio:
+                    cur.execute(
+                        "INSERT INTO pedido_domicilios (id_pedido, id_tienda, id_sede, direccion) VALUES (%s, %s, %s, %s)",
+                        (cur.lastrowid, id_tienda, id_sede, direccion),
+                    )
         else:
             if pedido["estado"] not in _ACTIVOS:
                 raise Conflicto("Este pedido ya está cerrado. Abre uno nuevo.")
+            if _en_camino(cur, pedido):
+                raise Conflicto("Este domicilio ya salió. Para agregar algo, abre otro pedido.")
+            if pedido["tipo"] == "domicilio" and direccion:
+                cur.execute("UPDATE pedido_domicilios SET direccion = %s WHERE id_pedido = %s",
+                            (direccion, pedido["id_pedido"]))
             cambios = {}
             if pedido["estado"] == "por_cobrar":
                 cambios["estado"] = "abierto"  # pidieron algo mas despues de la precuenta
@@ -597,6 +649,15 @@ def entregar_llevar(id_sede: int, lugar: Llevar) -> None:
         sitio, pedido = _ubicar(cur, id_sede, lugar)
         if not pedido or pedido["estado"] == "anulado":
             raise NoEncontrado("Pedido no encontrado.")
+        if pedido["tipo"] == "domicilio":
+            # Un domicilio se entrega cuando el domiciliario llega donde el cliente.
+            if not _en_camino(cur, pedido):
+                raise Conflicto("Primero despacha el domicilio con un domiciliario.")
+            cur.execute(
+                "UPDATE pedido_domicilios SET estado = 'entregado', entregado_en = %s "
+                "WHERE id_pedido = %s AND estado = 'despachado'",
+                (ahora_local(), pedido["id_pedido"]),
+            )
         if pedido["entregado_en"] is None:
             cur.execute("UPDATE pedidos SET entregado_en = %s WHERE id_pedido = %s", (ahora_local(), pedido["id_pedido"]))
             cur.execute(
@@ -673,6 +734,8 @@ def _preparar_cobro(cur, id_sede: int, lugar: Mesa | Llevar, id_pedido_visto) ->
     sin_enviar = sum(1 for l in lineas if l["estado"] == "pendiente")
     if sin_enviar:
         raise Conflicto(f"Hay {sin_enviar} producto(s) sin enviar a cocina. Envíalos o quítalos antes de cobrar.")
+    if _en_camino(cur, pedido):
+        raise Conflicto("Este domicilio va en camino: el pago se recibe en Caja, en Domiciliarios, cuando regrese.")
     return turno, sitio, pedido, lineas
 
 
