@@ -5,16 +5,16 @@ from app.services import plan_service as ps
 def test_precios_del_landing():
     assert ps.PLANES["basico"]["precio"] == 49000
     assert ps.PLANES["completo"]["precio"] == 69000
-    assert ps.PLANES["cadena"]["precio"] == 89000
+    assert ps.PLANES["cadena"]["precio"] == 99000
     assert ps.COSTO_MONTAJE_SEDE == 79000
 
 
 def test_sede_extra_cuesta_la_mitad_del_plan():
     assert ps.PLANES["completo"]["sede_extra"] == 34500
-    assert ps.PLANES["cadena"]["sede_extra"] == 44500
+    assert ps.PLANES["cadena"]["sede_extra"] == 49500
     assert ps.PLANES["basico"]["sede_extra"] is None
     assert ps.mensualidad("completo", 2) == 69000 + 34500
-    assert ps.mensualidad("cadena", 4) == 89000 + 3 * 44500
+    assert ps.mensualidad("cadena", 4) == 99000 + 3 * 49500
     assert ps.mensualidad("basico", 1) == 49000
 
 
