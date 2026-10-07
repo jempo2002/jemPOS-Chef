@@ -28,6 +28,14 @@ python scripts/crear_master.py "Tu nombre" tu@correo.com
 python run.py                   # http://127.0.0.1:5000
 ```
 
+### Probar mesas y comandas con datos de ejemplo
+
+```bash
+python scripts/crear_demo.py    # crea "Demo Chef": 10 mesas, carta y un usuario por rol
+```
+
+Usuarios `admin@`, `mesero@`, `cocina@` y `cajero@demo.chef` (misma contrasena). Prueba: Cajero abre caja en `/caja`; Mesero abre una mesa en `/mesas`, agrega platos y manda la comanda; Cocina la ve en `/cocina` y la avanza; Cajero cobra la mesa.
+
 ### Pruebas
 
 Necesitan una base MariaDB/MySQL (se borra y se crea `chef_pytest`) y, opcionalmente, Redis:
