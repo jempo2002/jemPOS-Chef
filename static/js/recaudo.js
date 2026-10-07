@@ -35,7 +35,8 @@
     cont.textContent = '';
     $('recaudo-vacio').hidden = datos.domiciliarios.length > 0;
     $('recaudo-resumen').textContent = datos.domicilios_en_calle
-      ? datos.domicilios_en_calle + ' domicilio(s) sin liquidar · ' + Chef.pesos(datos.efectivo_en_calle) + ' en efectivo en la calle'
+      ? datos.domicilios_en_calle + ' domicilio(s) sin liquidar · ' + Chef.pesos(datos.efectivo_en_calle) +
+        ' en efectivo en la calle. Esa plata todavía no está en el cajón ni en "Debe haber en efectivo".'
       : 'Nadie tiene plata pendiente por entregar.';
     if (esAdmin && document.activeElement !== $('recaudo-tope')) $('recaudo-tope').value = datos.tope;
     datos.domiciliarios.forEach(function (t) { cont.appendChild(tarjeta(t, datos.tope)); });
@@ -69,7 +70,7 @@
       t.domicilios.forEach(function (d) { ul.appendChild(fila(d)); });
       card.appendChild(ul);
       var recibir = boton(marcados.length ? 'Recibí ' + Chef.pesos(efectivo) + (marcados.length < t.domicilios.length ? ' (' + marcados.length + ' de ' + t.domicilios.length + ')' : '') : 'Marca un domicilio',
-        'btn btn--primario btn--grande', function () { liquidar(t, marcados, efectivo, otros); });
+        'btn btn--primario btn--grande', function () { liquidar(t, marcados, efectivo, otros, recibir); });
       recibir.disabled = !marcados.length || ocupado;
       card.appendChild(recibir);
     }
@@ -134,13 +135,14 @@
     }, function () { Chef.mostrar('Sin conexión. Intenta de nuevo.', true); });
   }
 
-  function liquidar(t, marcados, efectivo, otros) {
+  function liquidar(t, marcados, efectivo, otros, boton) {
     var porCobrar = marcados.some(function (d) { return !d.pagado; });
     if (porCobrar && !cajaAbierta) { Chef.mostrar('Abre la caja antes de recibir la plata.', true); return; }
     var texto = '¿' + t.nombre + ' te entregó ' + Chef.pesos(efectivo) + ' en efectivo?' +
       (otros ? '\nRevisa también que llegaron ' + Chef.pesos(otros) + ' por Nequi o tarjeta.' : '');
     if (!window.confirm(texto)) return;
     ocupado = true;
+    boton.disabled = true;  // un doble toque no manda dos recaudos
     Chef.api('POST', '/api/domicilios/recaudo', {
       id_domiciliario: t.id_domiciliario,
       pedidos: marcados.map(function (d) { return d.id_pedido; }),

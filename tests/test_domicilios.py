@@ -173,3 +173,38 @@ def test_mixto_solo_suma_la_parte_en_efectivo(salon, crear):
     assert venta["metodo_pago"] == "Mixto" and float(venta["monto_efectivo"]) == 10000
     assert float(venta["monto_transferencia"]) == 26000
     assert salon.cajero.get("/api/caja").get_json()["turno"]["esperado_en_caja"] == 10000
+
+
+def test_auditoria_roles_reasignar_y_anular_en_camino(salon, crear):
+    salon.cajero.post("/api/caja/abrir", json={"monto_inicial": 0})
+    pedro, luisa = _rider(salon), _rider(salon, "Luisa")
+    u, id_pedido = _domicilio(salon.mesero, (salon.burger, 1), (salon.gaseosa, 1))  # 22.000
+    # Cocina no toca domicilios ni recaudos.
+    assert salon.cocina.get("/api/domicilios").status_code == 403
+    assert salon.cocina.post(f"/api/domicilios/{id_pedido}/despachar", json={"id_domiciliario": pedro}).status_code == 403
+    assert salon.cocina.get("/api/domicilios/recaudo").status_code == 403
+    assert salon.mesero.get("/api/domicilios/recaudo").status_code == 403
+
+    salon.mesero.post(f"/api/domicilios/{id_pedido}/despachar", json={"id_domiciliario": pedro, "metodo": "efectivo"})
+    # Pasar la deuda a otro domiciliario: solo caja, y queda en auditoria.
+    r = salon.mesero.post(f"/api/domicilios/{id_pedido}/despachar", json={"id_domiciliario": luisa})
+    assert r.status_code == 403
+    r = salon.cajero.post(f"/api/domicilios/{id_pedido}/despachar", json={"id_domiciliario": luisa})
+    assert r.status_code == 200 and r.get_json()["ticket"]["cobrar"] == 22000
+    assert _tarjeta(salon, pedro)["efectivo"] == 0 and _tarjeta(salon, luisa)["efectivo"] == 22000
+    assert crear.fila("SELECT COUNT(*) AS n FROM auditoria WHERE accion = 'domicilio_reasignado'")["n"] == 1
+
+    # En camino no se anula la cuenta (seguiria en el recaudo).
+    assert salon.admin.post(f"/api/llevar/{u}/anular", json={"motivo": "x"}).status_code == 409
+
+    # Un Admin anula la gaseosa en el camino: la cifra baja y la vieja se rechaza.
+    gaseosa = next(i for i in salon.admin.get(f"/api/llevar/{u}/pedido").get_json()["items"] if i["nombre"] == "Gaseosa")
+    assert salon.admin.post(f"/api/pedido-items/{gaseosa['id_item']}/anular",
+                            json={"motivo": "El cliente no la quiso", "devolver": True}).status_code == 200
+    assert _tarjeta(salon, luisa)["efectivo"] == 18000
+    cuerpo = {"id_domiciliario": luisa, "pedidos": [id_pedido], "efectivo": 22000}
+    assert salon.cajero.post("/api/domicilios/recaudo", json=cuerpo).status_code == 409
+    # Recaudo de otro domiciliario con ese pedido: no.
+    assert salon.cajero.post("/api/domicilios/recaudo", json={**cuerpo, "id_domiciliario": pedro, "efectivo": 18000}).status_code == 409
+    assert salon.cajero.post("/api/domicilios/recaudo", json={**cuerpo, "efectivo": 18000}).status_code == 200
+    assert salon.cajero.get("/api/caja").get_json()["turno"]["esperado_en_caja"] == 18000

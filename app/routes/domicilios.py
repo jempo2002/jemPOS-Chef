@@ -61,7 +61,7 @@ def api_domicilios():
 def api_despachar(id_pedido):
     id_tienda, id_sede, id_usuario = _ctx()
     try:
-        ticket = domicilios_service.despachar(id_tienda, id_sede, id_usuario, id_pedido, _json())
+        ticket = domicilios_service.despachar(id_tienda, id_sede, id_usuario, session.get("rol"), id_pedido, _json())
     except _ERRORES as exc:
         return _error(exc)
     return _ok(msg=f"Despachado con {ticket['domiciliario']}.", ticket=ticket)

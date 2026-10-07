@@ -17,6 +17,7 @@ Base extraída de jemPOS (que no se modifica): login, recuperación de contrase�
 - **Recetas e insumos** (`/recetas`, Completo y Cadena): insumos en gramos, mililitros o unidades con stock por sede, compras en kg/lb/L con costo promedio ponderado, recetas por plato y costo por plato con alerta cuando los ingredientes pasan del 35 % del precio (ajustable por restaurante). Al enviar la comanda a cocina se descuentan los ingredientes, validando el consumo sumado por insumo. Insumos y líneas de receta con borrado suave; el kardex (`movimientos_inventario`) no se edita ni se borra (triggers en la base).
 - **Cuenta dividida** (Completo y Cadena, solo Cajero y Admin): botón "Dividir cuenta" en el pedido. Por productos, cada persona toma unidades de las líneas (2 cervezas se parten 1 y 1) y se cobra como una venta propia con su método y su propina. En partes iguales, el total se reparte en N montos y queda una sola venta con los platos reales; si mezclan efectivo con otro método, la venta queda Mixto. Cada parte queda en `pedido_cuentas`. Todo o nada, en una transacción, y reenviarlo desde la cola sin conexión no cobra dos veces.
 - **Para llevar** (todos los planes): botón "Nuevo para llevar" en Mesas. Funciona igual que una mesa (carta, enviar a cocina, precuenta, cobro, dividir), con nombre y teléfono del cliente y un número por sede (#1, #2…). El dispositivo le pone un uuid, así que se puede llenar sin conexión. Se puede cobrar antes de que la cocina termine; sale de la lista cuando se marca "Entregado al cliente" (o sola, 12 horas después de cobrado).
+- **Domicilios** (todos los planes): menú Domicilios. Se toman como un para llevar, con dirección. "Despachar" asigna el domiciliario, cómo paga el cliente (efectivo, Nequi, tarjeta o Mixto) y con cuánto paga, e imprime la hoja del domiciliario con lo que debe cobrar y el vuelto. En **Caja › Domiciliarios** hay una tarjeta por domiciliario con el efectivo exacto que debe entregar al regresar (solo cuenta lo no cobrado en efectivo, o la parte en efectivo de un Mixto), en rojo si pasa el tope (Admin lo ajusta, $150.000 por defecto). "Recibí $X" crea las ventas en la caja abierta y suma el efectivo al cajón; si la cifra cambió mientras tanto, no registra nada y avisa. Cambiar el método en el camino, reasignar domiciliario y "No lo entregó" son solo de Cajero y Admin y quedan en auditoría. Domiciliarios con borrado suave; no son usuarios ni gastan cupo del plan.
 - **Redis** solo para sesiones y contadores de intentos de login. Obligatorio en producción.
 
 ### Arrancar en local
@@ -29,6 +30,7 @@ python scripts/run_migration.py migrations/2026-10-07_sedes_planes_roles.sql
 python scripts/run_migration.py migrations/2026-10-07_turnos_mesas_comandas.sql
 python scripts/run_migration.py migrations/2026-10-07b_recetas_insumos.sql
 python scripts/run_migration.py migrations/2026-10-07c_cuenta_dividida_llevar.sql
+python scripts/run_migration.py migrations/2026-10-07d_domicilios_recaudo.sql
 python scripts/run_migration.py migrations/2026-10-07e_pago_mixto.sql
 python scripts/crear_master.py "Tu nombre" tu@correo.com
 python run.py                   # http://127.0.0.1:5000

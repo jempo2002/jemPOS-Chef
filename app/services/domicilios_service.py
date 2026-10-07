@@ -36,7 +36,7 @@ from decimal import Decimal
 from mysql.connector import IntegrityError
 
 from app.services import caja_service
-from app.services.errores import Conflicto, NoEncontrado
+from app.services.errores import Conflicto, ErrorServicio, NoEncontrado
 from app.services.pedidos_service import (
     _auditoria,
     _cerrar_pedido,
@@ -62,6 +62,7 @@ METODOS = {
     "mixto": "Mixto",
 }
 EN_CALLE = ("despachado", "entregado")
+ROLES_CAJA = ("Admin", "Cajero")
 _SIN_COBRAR = ("abierto", "por_cobrar")
 
 
@@ -368,9 +369,11 @@ def _domicilio_para_cambiar(cur, id_sede: int, id_pedido: int) -> tuple[dict, di
     return pedido, dom
 
 
-def despachar(id_tienda: int, id_sede: int, id_usuario: int, id_pedido: int, data: dict) -> dict:
+def despachar(id_tienda: int, id_sede: int, id_usuario: int, rol: str, id_pedido: int, data: dict) -> dict:
     """Asigna el domiciliario y lo saca a la calle. Exige todo enviado a
-    cocina. Repetirlo con otro domiciliario lo reasigna (queda en auditoria).
+    cocina. Repetirlo con otro domiciliario lo reasigna: eso pasa la deuda
+    de un domiciliario a otro, asi que solo lo hace Cajero o Admin y queda en
+    auditoria.
     Devuelve lo que se le muestra/imprime al domiciliario: cuanto cobrar, con
     que y el vuelto que debe llevar."""
     conn = get_db()
@@ -380,6 +383,9 @@ def despachar(id_tienda: int, id_sede: int, id_usuario: int, id_pedido: int, dat
         if dom["estado"] not in ("por_despachar", "despachado"):
             raise Conflicto("Este domicilio ya fue entregado.")
         domiciliario = _domiciliario_activo(cur, id_sede, data.get("id_domiciliario"))
+        reasigna = dom["estado"] == "despachado" and dom["id_domiciliario"] != domiciliario["id_domiciliario"]
+        if reasigna and rol not in ROLES_CAJA:
+            raise ErrorServicio("Solo el cajero o el administrador cambian el domiciliario de un domicilio en camino.", 403)
         lineas = [l for l in _lineas(cur, id_pedido) if l["estado"] != "anulado"]
         if not lineas:
             raise Conflicto("El domicilio está vacío.")
@@ -409,7 +415,7 @@ def despachar(id_tienda: int, id_sede: int, id_usuario: int, id_pedido: int, dat
             "UPDATE pedido_items SET estado = 'entregado' WHERE id_pedido = %s AND estado IN ('enviado', 'listo')",
             (id_pedido,),
         )
-        if dom["estado"] == "despachado" and dom["id_domiciliario"] != domiciliario["id_domiciliario"]:
+        if reasigna:
             _auditoria(cur, id_tienda, id_usuario, "domicilio_reasignado",
                        f"Domicilio #{pedido['numero_llevar']}: {dom['domiciliario']} -> {domiciliario['nombre']}")
         conn.commit()

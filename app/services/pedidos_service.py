@@ -557,6 +557,9 @@ def anular_pedido(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | L
     try:
         cur = conn.cursor(dictionary=True)
         pedido = _activo(*_ubicar(cur, id_sede, lugar))
+        if _en_camino(cur, pedido):
+            # Si no, seguiria contando en el recaudo del domiciliario.
+            raise Conflicto("Este domicilio va en camino. Si volvió sin entregarse, regrésalo desde Caja y luego anúlalo.")
         cur.execute(
             "SELECT COUNT(*) AS n FROM pedido_items WHERE id_pedido = %s AND estado NOT IN ('pendiente', 'anulado')",
             (pedido["id_pedido"],),
