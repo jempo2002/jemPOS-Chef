@@ -77,7 +77,8 @@ def db(base):
     for tabla in (
         "usuarios", "sedes", "tiendas", "auditoria", "categorias", "productos", "stock_sedes",
         "movimientos_inventario", "turnos_caja", "ventas", "detalle_ventas", "consecutivos", "zonas",
-        "mesas", "pedidos", "pedido_items", "comandas", "mermas",
+        "mesas", "pedidos", "pedido_items", "comandas", "mermas", "insumos", "stock_insumos_sedes",
+        "recetas_productos",
     ):
         cur.execute(f"TRUNCATE `{tabla}`")
     cur.execute("SET FOREIGN_KEY_CHECKS = 1")

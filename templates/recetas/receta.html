@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Receta de {{ receta.producto.nombre }}{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/recetas.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+<a class="volver" href="{{ url_for('recetas.recetas_page', pestana='recetas') }}">← Recetas</a>
+<h1>{{ receta.producto.nombre }}</h1>
+<p class="muted">Precio de venta {{ receta.precio_venta|pesos }}.{% if receta.disponibles is not none %} Con el inventario de esta sede alcanza para {{ receta.disponibles }}.{% endif %}</p>
+
+{% if receta.producto.controla_stock %}
+<p class="aviso aviso--error">Este producto lleva inventario propio. Quítale "Lleva inventario" en la <a href="{{ url_for('salon.carta_page') }}">carta</a> para descontar sus ingredientes.</p>
+{% elif not insumos %}
+<p class="aviso">Primero crea los insumos en la pestaña <a href="{{ url_for('recetas.recetas_page', pestana='insumos') }}">Insumos</a>.</p>
+{% else %}
+<section class="tarjeta" id="editor-receta"
+         data-api="PUT {{ url_for('recetas.api_receta_guardar', id_producto=receta.producto.id_producto) }}"
+         data-precio="{{ receta.precio_venta }}" data-margen="{{ receta.margen_alerta }}"
+         data-insumos='{{ insumos|tojson }}' data-lineas='{{ receta.lineas|tojson }}'>
+  <h2>Ingredientes por plato</h2>
+  <div class="receta-filas" id="receta-filas"></div>
+  <button class="btn" type="button" id="receta-agregar">+ Ingrediente</button>
+  <div class="receta-total">
+    <p class="fila-total">Costo del plato <strong id="receta-costo">$0</strong></p>
+    <p class="fila-total">Utilidad <strong id="receta-utilidad">$0</strong></p>
+    <p class="fila-total" id="receta-pct-fila">Costo sobre el precio <strong id="receta-pct">0 %</strong></p>
+  </div>
+  <button class="btn btn--primario" type="button" id="receta-guardar">Guardar receta</button>
+</section>
+{% endif %}
+{% endblock %}

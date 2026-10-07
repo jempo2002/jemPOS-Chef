@@ -41,6 +41,15 @@ def fmt_money(value: float) -> str:
     return f"${int(round(value)):,}".replace(",", ".")
 
 
+def fmt_numero(value, decimales: int = 3) -> str:
+    """Cantidades y costos al estilo colombiano: 2.267,96 y 3,8 (sin ceros
+    de sobra)."""
+    texto = f"{float(value or 0):,.{decimales}f}"
+    if "." in texto:
+        texto = texto.rstrip("0").rstrip(".")
+    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def only_digits(raw_value: str | None, max_len: int | None = None) -> str:
     """Keep only digits from user input with optional max length."""
     digits = re.sub(r"\D", "", str(raw_value or "").strip())

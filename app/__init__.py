@@ -96,18 +96,21 @@ def create_app() -> Flask:
     from app.routes.auth import auth
     from app.routes.core import core
     from app.routes.master import master
+    from app.routes.recetas import recetas
     from app.routes.restaurante import restaurante
     from app.routes.salon import salon
 
     app.register_blueprint(auth)
     app.register_blueprint(core)
     app.register_blueprint(master)
+    app.register_blueprint(recetas)
     app.register_blueprint(restaurante)
     app.register_blueprint(salon)
 
-    from app.utils.helpers import fmt_money
+    from app.utils.helpers import fmt_money, fmt_numero
 
     app.add_template_filter(fmt_money, "pesos")
+    app.add_template_filter(fmt_numero, "numero")
 
     @app.context_processor
     def _contexto_sesion():

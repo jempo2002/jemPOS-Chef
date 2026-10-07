@@ -90,9 +90,11 @@
       var b = boton('', 'producto', function () { agregar(p); });
       b.appendChild(el('span', 'producto__nombre', p.nombre));
       b.appendChild(el('span', 'producto__precio', Chef.pesos(p.precio_venta)));
-      if (p.stock_actual !== null && p.stock_actual !== undefined) {
-        b.appendChild(el('small', 'producto__stock' + (p.stock_actual <= 0 ? ' producto__stock--agotado' : ''),
-          p.stock_actual <= 0 ? 'Agotado' : 'Quedan ' + p.stock_actual));
+      // Stock propio, o cuantos platos alcanzan con los ingredientes (receta).
+      var quedan = p.stock_actual !== null && p.stock_actual !== undefined ? p.stock_actual : p.disponibles;
+      if (quedan !== null && quedan !== undefined) {
+        b.appendChild(el('small', 'producto__stock' + (quedan <= 0 ? ' producto__stock--agotado' : ''),
+          quedan <= 0 ? 'Agotado' : 'Quedan ' + quedan));
       }
       cont.appendChild(b);
     });

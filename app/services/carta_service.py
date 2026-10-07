@@ -2,11 +2,15 @@
 
 La carta es una sola por restaurante; el stock es por sede
 (inventario_service). Soft delete: estado_activo = 0. Un producto eliminado
-sigue en las ventas y pedidos viejos.
+sigue en las ventas y pedidos viejos, y su receta queda guardada.
+
+Un plato con receta (es_preparado, recetas_service) no lleva inventario
+propio y su costo lo pone la receta.
 """
 from __future__ import annotations
 
-from app.services.errores import NoEncontrado
+from app.services import recetas_service
+from app.services.errores import Conflicto, NoEncontrado
 from app.utils.validation import parse_bool, parse_float, sanitize_optional_text, sanitize_text
 from database import get_db
 
@@ -48,13 +52,15 @@ def _id_categoria(cur, id_tienda: int, nombre: str | None) -> int | None:
 
 def listar(id_tienda: int, id_sede: int) -> list[dict]:
     """Productos activos con su categoria y el stock de la sede (None si no
-    controlan stock). Ordenados como se muestran en la pantalla del pedido."""
+    controlan stock). Un plato con receta trae `disponibles`: cuantos alcanzan
+    con los insumos de la sede (solo en planes con recetas). Ordenados como
+    se muestran en la pantalla del pedido."""
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(
             "SELECT p.id_producto, p.nombre, p.precio_venta, p.precio_costo, p.estacion, p.controla_stock, "
-            "c.nombre AS categoria, s.stock_actual "
+            "p.es_preparado, c.nombre AS categoria, s.stock_actual "
             "FROM productos p "
             "LEFT JOIN categorias c ON c.id_categoria = p.id_categoria "
             "LEFT JOIN stock_sedes s ON s.id_producto = p.id_producto AND s.id_sede = %s "
@@ -63,13 +69,19 @@ def listar(id_tienda: int, id_sede: int) -> list[dict]:
             (id_sede, id_tienda),
         )
         filas = cur.fetchall()
+        disponibles = {}
+        preparados = [f["id_producto"] for f in filas if f["es_preparado"]]
+        if preparados and recetas_service.recetas_activas(cur, id_tienda):
+            disponibles = recetas_service.disponibles_por_plato(cur, id_sede, preparados)
     finally:
         conn.close()
     for f in filas:
         f["precio_venta"] = float(f["precio_venta"])
         f["precio_costo"] = float(f["precio_costo"])
         f["controla_stock"] = bool(f["controla_stock"])
+        f["es_preparado"] = bool(f["es_preparado"])
         f["stock_actual"] = float(f["stock_actual"] or 0) if f["controla_stock"] else None
+        f["disponibles"] = disponibles.get(f["id_producto"])
     return filas
 
 
@@ -102,11 +114,17 @@ def actualizar(id_tienda: int, id_producto: int, data: dict) -> None:
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(
-            "SELECT 1 FROM productos WHERE id_producto = %s AND id_tienda = %s AND estado_activo = 1 FOR UPDATE",
+            "SELECT es_preparado, precio_costo FROM productos "
+            "WHERE id_producto = %s AND id_tienda = %s AND estado_activo = 1 FOR UPDATE",
             (id_producto, id_tienda),
         )
-        if not cur.fetchone():
+        actual = cur.fetchone()
+        if not actual:
             raise NoEncontrado("Producto no encontrado.")
+        if actual["es_preparado"]:
+            if c["controla_stock"]:
+                raise Conflicto("Este plato tiene receta: su inventario son sus ingredientes.")
+            c["precio_costo"] = actual["precio_costo"]  # lo pone la receta
         id_categoria = _id_categoria(cur, id_tienda, c["categoria"])
         cur.execute(
             "UPDATE productos SET id_categoria = %s, nombre = %s, precio_venta = %s, precio_costo = %s, "

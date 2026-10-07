@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Recetas e insumos{% endblock %}
+{% block content %}
+<h1>Recetas e insumos</h1>
+<section class="tarjeta">
+  <h2>No viene en tu Plan {{ plan.nombre }}</h2>
+  <p>Con el Plan Completo cada plato descuenta sus ingredientes al enviarse a cocina, ves cuánto te cuesta cada plato y te avisamos cuando un insumo se está acabando.</p>
+  <ul class="funciones">
+    {% for b in aviso.beneficios %}<li>{{ b }}</li>{% endfor %}
+  </ul>
+  <a class="btn btn--primario" href="{{ aviso.accion_url }}" target="_blank" rel="noopener">{{ aviso.accion_texto }}</a>
+</section>
+{% endblock %}

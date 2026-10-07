@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Movimientos de {{ insumo.nombre }}{% endblock %}
+{% block content %}
+<a class="volver" href="{{ url_for('recetas.recetas_page', pestana='insumos') }}">← Insumos</a>
+<h1>{{ insumo.nombre }}</h1>
+<p class="muted">Compras, consumos de comandas y ajustes en esta sede, del más reciente al más antiguo. Los movimientos no se borran: un error se corrige con un conteo.</p>
+<section class="tarjeta">
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Fecha</th><th>Movimiento</th><th>Cantidad</th><th>Antes</th><th>Después</th><th>Quién</th></tr></thead>
+    <tbody>
+    {% for m in movimientos %}
+      <tr>
+        <td data-th="Fecha">{{ m.fecha_creacion.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td data-th="Movimiento"><strong>{{ {'Entrada': 'Entrada', 'Salida': 'Salida', 'Ajuste': 'Conteo'}.get(m.tipo_movimiento, m.tipo_movimiento) }}</strong>{% if m.motivo %}<br><small class="muted">{{ m.motivo }}</small>{% endif %}</td>
+        <td data-th="Cantidad">{{ m.cantidad|numero }} {{ insumo.abreviatura }}</td>
+        <td data-th="Antes">{{ m.stock_anterior|numero }}</td>
+        <td data-th="Después">{{ m.stock_posterior|numero }}</td>
+        <td data-th="Quién">{{ m.usuario or '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Sin movimientos en esta sede.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

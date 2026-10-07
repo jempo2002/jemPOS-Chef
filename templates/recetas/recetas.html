@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Recetas e insumos{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/recetas.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+<h1>Recetas e insumos</h1>
+<p class="muted">Los ingredientes se guardan en gramos, mililitros o unidades. Al enviar un plato a cocina se descuentan sus ingredientes del inventario de esta sede.</p>
+
+{% if alertas.insumos_bajos or alertas.platos_agotados %}
+<a class="franja" href="{{ url_for('recetas.recetas_page', pestana='insumos', estado='bajo') }}">
+  {% if alertas.insumos_bajos %}<strong>{{ alertas.insumos_bajos }}</strong> insumo{{ '' if alertas.insumos_bajos == 1 else 's' }} con stock bajo o agotado{% endif %}
+  {% if alertas.insumos_bajos and alertas.platos_agotados %} · {% endif %}
+  {% if alertas.platos_agotados %}<strong>{{ alertas.platos_agotados|length }}</strong> plato{{ '' if alertas.platos_agotados|length == 1 else 's' }} sin ingredientes para venderse: {{ alertas.platos_agotados|join(', ') }}{% endif %}
+</a>
+{% endif %}
+
+<nav class="pestanas" aria-label="Secciones">
+  {% for clave, texto in (('insumos', 'Insumos'), ('recetas', 'Recetas'), ('costos', 'Costos')) %}
+    <a class="pestana{{ ' pestana--activa' if pestana == clave }}" href="{{ url_for('recetas.recetas_page', pestana=clave) }}">{{ texto }}</a>
+  {% endfor %}
+</nav>
+
+{% if pestana == 'insumos' %}
+<section class="tarjeta">
+  <h2>Nuevo insumo</h2>
+  <form class="form form--fila" data-api="POST {{ url_for('recetas.api_insumos_crear') }}">
+    <input name="nombre" placeholder="Nombre (ej. Queso mozarella)" maxlength="150" required aria-label="Nombre" />
+    <select name="unidad_medida" aria-label="Se mide en">
+      <option value="Gramo">Gramos (sólidos)</option>
+      <option value="Mililitro">Mililitros (líquidos)</option>
+      <option value="Unidad">Unidades (huevos, panes)</option>
+    </select>
+    <input name="stock_minimo_alerta" inputmode="decimal" placeholder="Avisar cuando queden (g, ml, und)" aria-label="Mínimo" />
+    <button class="btn btn--primario" type="submit">Agregar</button>
+  </form>
+  <p class="muted"><small>El costo se calcula solo al registrar la primera compra con su precio.</small></p>
+</section>
+
+<section class="tarjeta">
+  <div class="cabecera">
+    <h2>Insumos de esta sede</h2>
+    {% if filtro_estado == 'bajo' %}<a href="{{ url_for('recetas.recetas_page', pestana='insumos') }}">Ver todos</a>
+    {% else %}<a href="{{ url_for('recetas.recetas_page', pestana='insumos', estado='bajo') }}">Solo stock bajo</a>{% endif %}
+  </div>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Insumo</th><th>Stock aquí</th><th>Mínimo</th><th>Costo</th><th>Estado</th><th></th></tr></thead>
+    <tbody>
+    {% for i in insumos %}
+      <tr>
+        <td data-th="Insumo"><strong>{{ i.nombre }}</strong>{% if i.en_recetas %}<br><small class="muted">En {{ i.en_recetas }} receta{{ '' if i.en_recetas == 1 else 's' }}</small>{% endif %}</td>
+        <td data-th="Stock aquí">{{ i.stock_actual|numero }} {{ i.abreviatura }}</td>
+        <td data-th="Mínimo">{% if i.stock_minimo_alerta is not none %}{{ i.stock_minimo_alerta|numero }} {{ i.abreviatura }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td data-th="Costo">${{ i.costo_unitario|numero(2) }} / {{ i.abreviatura }}</td>
+        <td data-th="Estado"><span class="chip chip--{{ i.estado }}">{{ {'ok': 'OK', 'bajo': 'Bajo', 'agotado': 'Agotado'}[i.estado] }}</span></td>
+        <td class="acciones">
+          <details>
+            <summary>Compra o ajuste</summary>
+            <form class="form form--fila" data-api="POST {{ url_for('recetas.api_insumos_movimiento', id_insumo=i.id_insumo) }}"
+                  data-costo-base="{{ i.abreviatura }}">
+              <select name="tipo" aria-label="Movimiento">
+                <option value="Entrada">Compra</option>
+                <option value="Salida">Salida (daño, consumo)</option>
+                <option value="Ajuste">Conteo (queda en)</option>
+              </select>
+              <input name="cantidad" inputmode="decimal" placeholder="Cantidad" required aria-label="Cantidad" />
+              <select name="unidad" aria-label="Unidad">
+                {% for u in i.unidades_compra %}<option value="{{ u }}" data-factor="{{ {'g': 1, 'kg': 1000, 'lb': 453.592, 'ml': 1, 'l': 1000, 'unidad': 1}[u] }}">{{ nombre_unidad[u] }}</option>{% endfor %}
+              </select>
+              <input name="precio_total" inputmode="numeric" placeholder="Precio total pagado" aria-label="Precio total pagado" />
+              <input name="motivo" maxlength="200" placeholder="Nota (opcional)" aria-label="Nota" />
+              <button class="btn" type="submit">Registrar</button>
+              <small class="muted vista-costo" aria-live="polite"></small>
+            </form>
+          </details>
+          <details>
+            <summary>Editar</summary>
+            <form class="form form--fila" data-api="PUT {{ url_for('recetas.api_insumos_actualizar', id_insumo=i.id_insumo) }}">
+              <input name="nombre" value="{{ i.nombre }}" maxlength="150" required aria-label="Nombre" />
+              <label class="campo-corto">Mínimo ({{ i.abreviatura }}) <input name="stock_minimo_alerta" inputmode="decimal" value="{{ ('%g'|format(i.stock_minimo_alerta))|replace('.', ',') if i.stock_minimo_alerta is not none else '' }}" aria-label="Mínimo" /></label>
+              <label class="campo-corto">Costo por {{ i.abreviatura }} <input name="costo_unitario" inputmode="decimal" value="{{ ('%g'|format(i.costo_unitario))|replace('.', ',') }}" aria-label="Costo" /></label>
+              <button class="btn" type="submit">Guardar</button>
+            </form>
+          </details>
+          <a class="enlace-accion" href="{{ url_for('recetas.movimientos_page', id_insumo=i.id_insumo) }}">Movimientos</a>
+          <button class="btn-link btn-link--peligro" type="button"
+                  data-api="DELETE {{ url_for('recetas.api_insumos_eliminar', id_insumo=i.id_insumo) }}"
+                  data-confirmar="¿Eliminar {{ i.nombre }}? Su historial se conserva.">Eliminar</button>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">{% if filtro_estado %}Ningún insumo con stock bajo.{% else %}Todavía no hay insumos. Agrega los ingredientes que compras: carne, queso, pan…{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% elif pestana == 'recetas' %}
+<section class="tarjeta">
+  <h2>Platos</h2>
+  <p class="muted">Ponle receta a lo que se prepara. Lo que se compra hecho y lleva inventario propio (gaseosas, cervezas) no aparece aquí.</p>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Plato</th><th>Ingredientes</th><th>Alcanza para</th><th>Costo</th><th></th></tr></thead>
+    <tbody>
+    {% for p in platos %}
+      <tr>
+        <td data-th="Plato"><strong>{{ p.nombre }}</strong>{% if p.categoria %}<br><small class="muted">{{ p.categoria }}</small>{% endif %}</td>
+        <td data-th="Ingredientes">{% if p.es_preparado %}{{ p.ingredientes }}{% else %}<span class="muted">Sin receta</span>{% endif %}</td>
+        <td data-th="Alcanza para">{% if p.disponibles is not none %}<span class="{{ 'texto-peligro' if p.disponibles == 0 }}">{{ p.disponibles }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td data-th="Costo">{% if p.es_preparado %}{{ p.costo|pesos }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="acciones"><a class="btn" href="{{ url_for('recetas.receta_page', id_producto=p.id_producto) }}">{{ 'Editar receta' if p.es_preparado else 'Poner receta' }}</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No hay platos. Créalos primero en la <a href="{{ url_for('salon.carta_page') }}">carta</a>.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% else %}
+<section class="tarjeta">
+  <div class="cabecera">
+    <div>
+      <h2>Costo por plato</h2>
+      <p class="muted">En rojo los platos cuyos ingredientes cuestan más del {{ costos.margen_alerta|numero }} % del precio de venta.{% if costos.en_alerta %} Hay {{ costos.en_alerta }}.{% endif %}</p>
+    </div>
+    <div class="acciones">
+      <form class="form form--fila" data-api="PUT {{ url_for('recetas.api_margen') }}">
+        <label class="campo-corto">Alerta desde <input name="margen_alerta" inputmode="decimal" value="{{ costos.margen_alerta|numero }}" aria-label="Porcentaje de alerta" /> %</label>
+        <button class="btn" type="submit">Cambiar</button>
+      </form>
+      <a class="btn" href="{{ url_for('recetas.costos_csv') }}">Exportar</a>
+    </div>
+  </div>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Plato</th><th>Costo</th><th>Precio</th><th>Utilidad</th><th>% costo</th></tr></thead>
+    <tbody>
+    {% for p in costos.platos %}
+      <tr class="{{ 'fila--alerta' if p.alerta }}">
+        <td data-th="Plato"><a href="{{ url_for('recetas.receta_page', id_producto=p.id_producto) }}"><strong>{{ p.nombre }}</strong></a></td>
+        <td data-th="Costo">{{ p.costo|pesos }}</td>
+        <td data-th="Precio">{{ p.precio_venta|pesos }}</td>
+        <td data-th="Utilidad">{{ p.utilidad|pesos }}</td>
+        <td data-th="% costo"><strong>{% if p.pct_costo is not none %}{{ p.pct_costo|numero(1) }} %{% else %}Sin precio{% endif %}</strong></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">Ningún plato tiene receta todavía.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

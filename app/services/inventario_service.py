@@ -1,10 +1,14 @@
 """Stock por sede y su kardex (movimientos_inventario).
 
-Solo los productos con `controla_stock = 1` tienen inventario; un plato que se
-prepara sin receta no lo tiene (las recetas e insumos llegan en otro modulo).
+Dos clases de articulo llevan stock por sede, con las mismas reglas:
+  producto  lo que se vende hecho (gaseosas, cervezas): `controla_stock = 1`,
+            tabla stock_sedes.
+  insumo    ingredientes de las recetas (recetas_service), tabla
+            stock_insumos_sedes. Un plato con receta no tiene stock propio.
 
-El kardex nunca se borra ni se edita: toda correccion es un movimiento nuevo
-(Entrada, Salida o Ajuste) con el stock de antes y de despues.
+El kardex nunca se borra ni se edita (la base lo impide con triggers): toda
+correccion es un movimiento nuevo (Entrada, Salida o Ajuste) con el stock de
+antes y de despues.
 
 Las funciones con `cur` trabajan dentro de la transaccion del llamador y no
 hacen commit: enviar una comanda descuenta el stock y crea la comanda juntos,
@@ -20,63 +24,80 @@ from database import get_db
 
 TIPOS_MOVIMIENTO = ("Entrada", "Salida", "Ajuste")
 CANTIDAD_MAX = 100000
+# clase -> (tabla de stock, columna del id, tabla del articulo)
+_CLASES = {
+    "producto": ("stock_sedes", "id_producto", "productos"),
+    "insumo": ("stock_insumos_sedes", "id_insumo", "insumos"),
+}
 
 
 def _d(valor) -> Decimal:
     return Decimal(str(valor or 0)).quantize(Decimal("0.001"))
 
 
-def _bloquear_stock(cur, id_sede: int, id_producto: int) -> Decimal:
+def _bloquear_stock(cur, id_sede: int, id_articulo: int, clase: str = "producto") -> Decimal:
     """Stock actual de la sede con la fila bloqueada hasta el commit. Si el
-    producto nunca tuvo stock en la sede, crea la fila en 0."""
+    articulo nunca tuvo stock en la sede, crea la fila en 0."""
+    tabla, columna, _ = _CLASES[clase]
     cur.execute(
-        "INSERT IGNORE INTO stock_sedes (id_sede, id_producto, stock_actual) VALUES (%s, %s, 0)",
-        (id_sede, id_producto),
+        f"INSERT IGNORE INTO {tabla} (id_sede, {columna}, stock_actual) VALUES (%s, %s, 0)",
+        (id_sede, id_articulo),
     )
     cur.execute(
-        "SELECT stock_actual FROM stock_sedes WHERE id_sede = %s AND id_producto = %s FOR UPDATE",
-        (id_sede, id_producto),
+        f"SELECT stock_actual FROM {tabla} WHERE id_sede = %s AND {columna} = %s FOR UPDATE",
+        (id_sede, id_articulo),
     )
     return _d(cur.fetchone()["stock_actual"])
 
 
-def _movimiento(cur, id_tienda, id_sede, id_producto, id_usuario, tipo, cantidad, antes, despues, motivo):
+def _movimiento(cur, id_tienda, id_sede, id_articulo, id_usuario, tipo, cantidad, antes, despues, motivo,
+                clase: str = "producto", id_pedido: int | None = None):
+    tabla, columna, _ = _CLASES[clase]
     cur.execute(
-        "UPDATE stock_sedes SET stock_actual = %s WHERE id_sede = %s AND id_producto = %s",
-        (despues, id_sede, id_producto),
+        f"UPDATE {tabla} SET stock_actual = %s WHERE id_sede = %s AND {columna} = %s",
+        (despues, id_sede, id_articulo),
     )
     cur.execute(
-        "INSERT INTO movimientos_inventario "
-        "(id_tienda, id_sede, id_producto, id_usuario, tipo_movimiento, motivo, cantidad, stock_anterior, stock_posterior) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        (id_tienda, id_sede, id_producto, id_usuario, tipo, (motivo or "")[:255] or None, cantidad, antes, despues),
+        f"INSERT INTO movimientos_inventario "
+        f"(id_tienda, id_sede, {columna}, id_pedido, id_usuario, tipo_movimiento, motivo, cantidad, stock_anterior, stock_posterior) "
+        f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (id_tienda, id_sede, id_articulo, id_pedido, id_usuario, tipo, (motivo or "")[:255] or None,
+         cantidad, antes, despues),
     )
 
 
-def descontar(cur, id_tienda: int, id_sede: int, id_usuario: int, consumo: dict[int, Decimal], motivo: str) -> None:
-    """Saca del stock de la sede {id_producto: cantidad}. Solo recibe productos
-    que controlan stock. Revisa todo antes de tocar nada: si falta uno, lanza
-    Conflicto y la transaccion del llamador se deshace entera.
+def descontar(cur, id_tienda: int, id_sede: int, id_usuario: int, consumo: dict[int, Decimal], motivo: str,
+              clase: str = "producto", id_pedido: int | None = None) -> None:
+    """Saca del stock de la sede {id_articulo: cantidad}. `consumo` ya viene
+    sumado por articulo (dos platos con el mismo insumo se validan juntos).
+    Revisa todo antes de tocar nada: si falta uno, lanza Conflicto y la
+    transaccion del llamador se deshace entera.
 
-    Bloquea en orden de id_producto: dos comandas simultaneas con los mismos
-    productos no se cruzan en un deadlock."""
+    Bloquea en orden de id: dos comandas simultaneas con los mismos
+    articulos no se cruzan en un deadlock."""
     if not consumo:
         return
-    stock = {pid: _bloquear_stock(cur, id_sede, pid) for pid in sorted(consumo)}
-    faltan = [pid for pid in sorted(consumo) if stock[pid] < consumo[pid]]
+    _, columna, tabla_articulo = _CLASES[clase]
+    stock = {aid: _bloquear_stock(cur, id_sede, aid, clase) for aid in sorted(consumo)}
+    faltan = [aid for aid in sorted(consumo) if stock[aid] < consumo[aid]]
     if faltan:
         marcadores = ", ".join(["%s"] * len(faltan))
-        cur.execute(f"SELECT id_producto, nombre FROM productos WHERE id_producto IN ({marcadores})", tuple(faltan))
-        nombres = {f["id_producto"]: f["nombre"] for f in cur.fetchall()}
-        detalle = "; ".join(f"{nombres.get(pid, 'Producto')} (quedan {stock[pid]:g})" for pid in faltan)
+        cur.execute(f"SELECT {columna} AS id, nombre FROM {tabla_articulo} WHERE {columna} IN ({marcadores})", tuple(faltan))
+        nombres = {f["id"]: f["nombre"] for f in cur.fetchall()}
+        detalle = "; ".join(
+            f"{nombres.get(aid, 'Producto')} (quedan {stock[aid]:g}, se necesitan {consumo[aid]:g})" for aid in faltan
+        )
         raise Conflicto(f"No hay suficiente inventario: {detalle}.")
-    for pid in sorted(consumo):
-        _movimiento(cur, id_tienda, id_sede, pid, id_usuario, "Salida", consumo[pid], stock[pid], stock[pid] - consumo[pid], motivo)
+    for aid in sorted(consumo):
+        _movimiento(cur, id_tienda, id_sede, aid, id_usuario, "Salida", consumo[aid], stock[aid],
+                    stock[aid] - consumo[aid], motivo, clase, id_pedido)
 
 
-def devolver(cur, id_tienda: int, id_sede: int, id_usuario: int, id_producto: int, cantidad: Decimal, motivo: str) -> None:
-    antes = _bloquear_stock(cur, id_sede, id_producto)
-    _movimiento(cur, id_tienda, id_sede, id_producto, id_usuario, "Entrada", cantidad, antes, antes + cantidad, motivo)
+def devolver(cur, id_tienda: int, id_sede: int, id_usuario: int, id_articulo: int, cantidad: Decimal, motivo: str,
+             clase: str = "producto", id_pedido: int | None = None) -> None:
+    antes = _bloquear_stock(cur, id_sede, id_articulo, clase)
+    _movimiento(cur, id_tienda, id_sede, id_articulo, id_usuario, "Entrada", cantidad, antes, antes + cantidad, motivo,
+                clase, id_pedido)
 
 
 def stock_de_sede(cur, id_sede: int, ids: list[int]) -> dict[int, Decimal]:

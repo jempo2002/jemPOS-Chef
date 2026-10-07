@@ -14,6 +14,7 @@ Base extraída de jemPOS (que no se modifica): login, recuperación de contrase�
 - **Planes** (`app/services/plan_service.py`): Básico $49.000, Completo $69.000, Cadena $99.000. Recetas, cocina, cuenta dividida y multisede desde Completo (`requiere_funcion("recetas")`); factura electrónica solo en Cadena.
 - **Multisede**: hasta 4 sedes en Completo y Cadena, 1 en Básico. Cada sede extra paga el 50 % del plan al mes y un montaje único de $79.000, que el Master marca cobrado. Triggers en la base rechazan una sede de más o bajar a Básico con varias sedes.
 - **Panel Master** (`/panel-master`): crea restaurantes (tienda + sede principal + Admin, con un mes de prueba), cambia el plan, registra pagos y elimina.
+- **Recetas e insumos** (`/recetas`, Completo y Cadena): insumos en gramos, mililitros o unidades con stock por sede, compras en kg/lb/L con costo promedio ponderado, recetas por plato y costo por plato con alerta cuando los ingredientes pasan del 35 % del precio (ajustable por restaurante). Al enviar la comanda a cocina se descuentan los ingredientes, validando el consumo sumado por insumo. Insumos y líneas de receta con borrado suave; el kardex (`movimientos_inventario`) no se edita ni se borra (triggers en la base).
 - **Redis** solo para sesiones y contadores de intentos de login. Obligatorio en producción.
 
 ### Arrancar en local
@@ -24,6 +25,7 @@ cp .env.example .env            # FLASK_ENV=development y datos de la base
 python scripts/run_migration.py db/schema.sql
 python scripts/run_migration.py migrations/2026-10-07_sedes_planes_roles.sql
 python scripts/run_migration.py migrations/2026-10-07_turnos_mesas_comandas.sql
+python scripts/run_migration.py migrations/2026-10-07b_recetas_insumos.sql
 python scripts/crear_master.py "Tu nombre" tu@correo.com
 python run.py                   # http://127.0.0.1:5000
 ```
@@ -31,7 +33,7 @@ python run.py                   # http://127.0.0.1:5000
 ### Probar mesas y comandas con datos de ejemplo
 
 ```bash
-python scripts/crear_demo.py    # crea "Demo Chef": 10 mesas, carta y un usuario por rol
+python scripts/crear_demo.py    # crea "Demo Chef": 10 mesas, carta, insumos, 4 recetas y un usuario por rol
 ```
 
 Usuarios `admin@`, `mesero@`, `cocina@` y `cajero@demo.chef` (misma contrasena). Prueba: Cajero abre caja en `/caja`; Mesero abre una mesa en `/mesas`, agrega platos y manda la comanda; Cocina la ve en `/cocina` y la avanza; Cajero cobra la mesa.

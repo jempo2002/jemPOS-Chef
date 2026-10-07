@@ -6,7 +6,9 @@ Ciclo (plan "Mesas, comandas y cuentas"):
      `pendiente`. Solo avisa si falta stock; todavia no descuenta nada.
   2. enviar_comanda: descuenta el inventario (regla de jempo: al enviar a
      cocina, porque desde ahi se empieza a cocinar) y crea una comanda por
-     estacion. Lo de estacion `ninguna` (una gaseosa) queda entregado.
+     estacion. Lo que lleva stock propio descuenta el producto; un plato con
+     receta descuenta sus insumos (solo en planes con recetas). Lo de
+     estacion `ninguna` (una gaseosa) queda entregado.
   3. precuenta: total + propina sugerida; el pedido pasa a `por_cobrar`.
   4. cobrar: crea UNA venta normal (ventas + detalle_ventas) con la propina
      aparte, suma el efectivo al turno y libera la mesa. No vuelve a tocar el
@@ -25,7 +27,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from mysql.connector import IntegrityError
 
-from app.services import caja_service, inventario_service
+from app.services import caja_service, inventario_service, recetas_service
 from app.services.errores import Conflicto, ErrorServicio, NoEncontrado
 from app.services.mesas_service import mesa_de_sede
 from app.utils.helpers import ahora_local
@@ -79,7 +81,7 @@ def _pedido_de_mesa(cur, id_sede: int, id_mesa: int, bloquear: bool = True) -> d
 
 def _lineas(cur, id_pedido: int) -> list[dict]:
     cur.execute(
-        "SELECT i.id_item, i.id_producto, p.nombre, p.estacion, p.controla_stock, p.precio_costo, "
+        "SELECT i.id_item, i.id_producto, p.nombre, p.estacion, p.controla_stock, p.es_preparado, p.precio_costo, "
         "i.cantidad, i.precio_unitario, i.nota, i.estado, i.id_comanda, c.numero AS numero_comanda "
         "FROM pedido_items i "
         "JOIN productos p ON p.id_producto = i.id_producto "
@@ -266,10 +268,19 @@ def enviar_comanda(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int) 
             return {"comandas": [], "msg": "No hay nada nuevo para enviar."}
 
         consumo: dict[int, Decimal] = defaultdict(Decimal)
+        preparados: dict[int, Decimal] = defaultdict(Decimal)
         for linea in pendientes:
             if linea["controla_stock"]:
                 consumo[linea["id_producto"]] += Decimal(linea["cantidad"])
-        inventario_service.descontar(cur, id_tienda, id_sede, id_usuario, dict(consumo), f"Comanda mesa {mesa['nombre']}")
+            elif linea["es_preparado"]:
+                preparados[linea["id_producto"]] += Decimal(linea["cantidad"])
+        motivo = f"Comanda mesa {mesa['nombre']}"
+        inventario_service.descontar(cur, id_tienda, id_sede, id_usuario, dict(consumo), motivo,
+                                     id_pedido=pedido["id_pedido"])
+        if preparados and recetas_service.recetas_activas(cur, id_tienda):
+            insumos = recetas_service.consumo_insumos(cur, dict(preparados))
+            inventario_service.descontar(cur, id_tienda, id_sede, id_usuario, insumos, motivo, "insumo",
+                                         pedido["id_pedido"])
 
         comandas = []
         for estacion in ("cocina", "bar"):
@@ -311,15 +322,16 @@ def enviar_comanda(id_tienda: int, id_sede: int, id_usuario: int, id_mesa: int) 
 def anular_item(id_tienda: int, id_sede: int, id_usuario: int, rol: str, id_item: int, data: dict) -> None:
     """Pendiente: se quita sin costo. Ya enviado: solo un Admin, con motivo.
     Si no se alcanzo a preparar (`devolver`), el inventario vuelve; si no,
-    queda como merma (lo cocinado ya se gasto)."""
+    queda como merma (lo cocinado ya se gasto). Un plato con receta devuelve
+    sus insumos segun la receta de hoy."""
     motivo = sanitize_optional_text(data.get("motivo"), "El motivo", max_len=200)
     devolver = parse_bool(data.get("devolver") or False)
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(
-            "SELECT i.id_item, i.id_producto, i.cantidad, i.estado, i.id_comanda, p.estado AS estado_pedido, "
-            "pr.nombre, pr.controla_stock, pr.precio_costo "
+            "SELECT i.id_item, i.id_pedido, i.id_producto, i.cantidad, i.estado, i.id_comanda, p.estado AS estado_pedido, "
+            "pr.nombre, pr.controla_stock, pr.es_preparado, pr.precio_costo "
             "FROM pedido_items i JOIN pedidos p ON p.id_pedido = i.id_pedido "
             "JOIN productos pr ON pr.id_producto = i.id_producto "
             "WHERE i.id_item = %s AND p.id_sede = %s FOR UPDATE",
@@ -346,9 +358,15 @@ def anular_item(id_tienda: int, id_sede: int, id_usuario: int, rol: str, id_item
             cur.execute("UPDATE comandas SET actualizada_en = NOW(3) WHERE id_comanda = %s", (item["id_comanda"],))
             cantidad = Decimal(item["cantidad"])
             if devolver:
+                razon = f"Anulado sin preparar: {motivo}"
                 if item["controla_stock"]:
                     inventario_service.devolver(cur, id_tienda, id_sede, id_usuario, item["id_producto"], cantidad,
-                                                f"Anulado sin preparar: {motivo}")
+                                                razon, id_pedido=item["id_pedido"])
+                elif item["es_preparado"] and recetas_service.recetas_activas(cur, id_tienda):
+                    insumos = recetas_service.consumo_insumos(cur, {item["id_producto"]: cantidad})
+                    for id_insumo in sorted(insumos):
+                        inventario_service.devolver(cur, id_tienda, id_sede, id_usuario, id_insumo, insumos[id_insumo],
+                                                    razon, "insumo", item["id_pedido"])
             else:
                 cur.execute(
                     "INSERT INTO mermas (id_tienda, id_sede, id_item, id_producto, cantidad, costo_unitario, motivo, id_usuario) "
