@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Mesas{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/salon-comun.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/mesas.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+<div class="cabecera">
+  <div>
+    <h1>Mesas</h1>
+    <p class="muted" id="resumen-mesas">Cargando…</p>
+  </div>
+  <div class="acciones">
+    {% if usuario.rol == 'Admin' %}<a class="btn" href="{{ url_for('salon.configurar_mesas_page') }}">Configurar mesas</a>{% endif %}
+    {% if puede_cobrar %}<a class="btn" href="{{ url_for('salon.caja_page') }}">Caja</a>{% endif %}
+  </div>
+</div>
+<nav class="pestanas" id="zonas" aria-label="Zonas"></nav>
+<section class="plano" id="plano" aria-live="polite"></section>
+<p class="muted vacio" id="sin-mesas" hidden>
+  Esta sede todavía no tiene mesas.
+  {% if usuario.rol == 'Admin' %}<a href="{{ url_for('salon.configurar_mesas_page') }}">Crea las mesas</a>.{% else %}Pide al administrador que las cree.{% endif %}
+</p>
+<p class="leyenda muted">
+  <span class="punto punto--libre"></span> Libre
+  <span class="punto punto--abierto"></span> Ocupada
+  <span class="punto punto--por_cobrar"></span> Pidió la cuenta
+</p>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Carta{% endblock %}
+{% macro campos(p) %}
+  <input name="nombre" value="{{ p.nombre if p else '' }}" placeholder="Nombre" maxlength="150" required aria-label="Nombre" />
+  <input name="categoria" value="{{ (p.categoria or '') if p else '' }}" placeholder="Categoría (ej. Bebidas)" maxlength="120" list="categorias" aria-label="Categoría" />
+  <input name="precio_venta" value="{{ (p.precio_venta|int) if p else '' }}" placeholder="Precio" inputmode="numeric" required aria-label="Precio" />
+  <input name="precio_costo" value="{{ (p.precio_costo|int) if p else '' }}" placeholder="Costo" inputmode="numeric" aria-label="Costo" />
+  <select name="estacion" aria-label="Se prepara en">
+    {% for e in estaciones %}<option value="{{ e }}" {% if p and p.estacion == e %}selected{% endif %}>{{ {'cocina': 'Cocina', 'bar': 'Bar', 'ninguna': 'No se prepara'}[e] }}</option>{% endfor %}
+  </select>
+  <label class="check"><input type="checkbox" name="controla_stock" {% if p and p.controla_stock %}checked{% endif %} /> Lleva inventario</label>
+{% endmacro %}
+{% block content %}
+<h1>Carta</h1>
+<p class="muted">La carta es la misma en todas las sedes; el inventario es de cada sede. "Lleva inventario" es para lo que se compra hecho (gaseosas, cervezas) o se cuenta por unidad: se descuenta al enviar el pedido a cocina.</p>
+
+<section class="tarjeta">
+  <h2>Nuevo producto</h2>
+  <form class="form form--fila" data-api="POST {{ url_for('salon.api_carta_crear') }}">
+    {{ campos(none) }}
+    <button class="btn btn--primario" type="submit">Agregar</button>
+  </form>
+</section>
+
+<section class="tarjeta">
+  <table class="tabla">
+    <thead><tr><th>Producto</th><th>Categoría</th><th>Precio</th><th>Se prepara en</th><th>Inventario aquí</th><th></th></tr></thead>
+    <tbody>
+    {% for p in productos %}
+      <tr>
+        <td><strong>{{ p.nombre }}</strong></td>
+        <td>{{ p.categoria or '' }}</td>
+        <td>{{ p.precio_venta|pesos }}</td>
+        <td>{{ {'cocina': 'Cocina', 'bar': 'Bar', 'ninguna': 'No se prepara'}[p.estacion] }}</td>
+        <td>{% if p.controla_stock %}{{ '%g'|format(p.stock_actual) }}{% else %}<span class="muted">No lleva</span>{% endif %}</td>
+        <td class="acciones">
+          <details>
+            <summary>Editar</summary>
+            <form class="form form--fila" data-api="PUT {{ url_for('salon.api_carta_actualizar', id_producto=p.id_producto) }}">
+              {{ campos(p) }}
+              <button class="btn" type="submit">Guardar</button>
+            </form>
+          </details>
+          {% if p.controla_stock %}
+          <details>
+            <summary>Inventario</summary>
+            <form class="form form--fila" data-api="POST {{ url_for('salon.api_inventario_movimiento', id_producto=p.id_producto) }}">
+              <select name="tipo" aria-label="Movimiento">
+                <option value="Entrada">Entrada (compra)</option>
+                <option value="Salida">Salida (consumo, daño)</option>
+                <option value="Ajuste">Conteo (queda en)</option>
+              </select>
+              <input name="cantidad" inputmode="decimal" placeholder="Cantidad" required aria-label="Cantidad" />
+              <input name="motivo" maxlength="200" placeholder="Motivo" aria-label="Motivo" />
+              <button class="btn" type="submit">Registrar</button>
+            </form>
+          </details>
+          {% endif %}
+          <button class="btn-link btn-link--peligro" type="button"
+                  data-api="DELETE {{ url_for('salon.api_carta_eliminar', id_producto=p.id_producto) }}"
+                  data-confirmar="¿Quitar {{ p.nombre }} de la carta? Lo ya vendido se conserva.">Quitar</button>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Todavía no hay productos.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <datalist id="categorias">
+    {% for c in productos|map(attribute='categoria')|reject('none')|unique %}<option value="{{ c }}">{% endfor %}
+  </datalist>
+</section>
+{% endblock %}

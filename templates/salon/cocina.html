@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Bar' if estacion == 'bar' else 'Cocina' }}{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/salon-comun.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/cocina.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+<div id="cocina" data-estacion="{{ estacion }}">
+  <div class="cabecera">
+    <div>
+      <h1>{{ 'Bar' if estacion == 'bar' else 'Cocina' }}</h1>
+      <p class="muted" id="estado-cocina">Cargando…</p>
+    </div>
+    <nav class="pestanas" aria-label="Estación">
+      <a class="pestana{% if estacion == 'cocina' %} pestana--activa{% endif %}" href="{{ url_for('salon.cocina_page', estacion='cocina') }}">Cocina</a>
+      <a class="pestana{% if estacion == 'bar' %} pestana--activa{% endif %}" href="{{ url_for('salon.cocina_page', estacion='bar') }}">Bar</a>
+    </nav>
+  </div>
+  <div class="tablero">
+    <section class="columna" aria-label="Nuevas"><h2>Nuevas <span class="chip" id="n-nueva">0</span></h2><div id="col-nueva"></div></section>
+    <section class="columna" aria-label="Preparando"><h2>Preparando <span class="chip" id="n-preparando">0</span></h2><div id="col-preparando"></div></section>
+    <section class="columna" aria-label="Listas"><h2>Listas para recoger <span class="chip" id="n-lista">0</span></h2><div id="col-lista"></div></section>
+  </div>
+</div>
+{% endblock %}

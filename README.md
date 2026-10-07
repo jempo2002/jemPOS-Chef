@@ -23,6 +23,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env            # FLASK_ENV=development y datos de la base
 python scripts/run_migration.py db/schema.sql
 python scripts/run_migration.py migrations/2026-10-07_sedes_planes_roles.sql
+python scripts/run_migration.py migrations/2026-10-07_turnos_mesas_comandas.sql
 python scripts/crear_master.py "Tu nombre" tu@correo.com
 python run.py                   # http://127.0.0.1:5000
 ```

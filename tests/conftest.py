@@ -74,7 +74,11 @@ def db(base):
     conn = _conectar(database=DB_NAME, autocommit=True)
     cur = conn.cursor()
     cur.execute("SET FOREIGN_KEY_CHECKS = 0")
-    for tabla in ("usuarios", "sedes", "tiendas", "auditoria"):
+    for tabla in (
+        "usuarios", "sedes", "tiendas", "auditoria", "categorias", "productos", "stock_sedes",
+        "movimientos_inventario", "turnos_caja", "ventas", "detalle_ventas", "consecutivos", "zonas",
+        "mesas", "pedidos", "pedido_items", "comandas", "mermas",
+    ):
         cur.execute(f"TRUNCATE `{tabla}`")
     cur.execute("SET FOREIGN_KEY_CHECKS = 1")
     yield conn

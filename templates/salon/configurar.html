@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Configurar mesas{% endblock %}
+{% macro select_zona(actual) %}
+  <select name="id_zona" aria-label="Zona">
+    <option value="">Sin zona</option>
+    {% for z in zonas %}<option value="{{ z.id_zona }}" {% if z.id_zona == actual %}selected{% endif %}>{{ z.nombre }}</option>{% endfor %}
+  </select>
+{% endmacro %}
+{% block content %}
+<a class="volver" href="{{ url_for('salon.mesas_page') }}">← Mesas</a>
+<h1>Configurar mesas</h1>
+<p class="muted">Las mesas y zonas son de la sede {{ usuario.sede }}.</p>
+
+<section class="tarjeta">
+  <h2>Zonas</h2>
+  <p class="muted">Opcional. Sirven para agrupar las mesas en el plano (salón, terraza, barra).</p>
+  <ul class="lista-simple">
+    {% for z in zonas %}
+      <li class="acciones">
+        <form class="form form--fila" data-api="PUT {{ url_for('salon.api_zonas_actualizar', id_zona=z.id_zona) }}">
+          <input name="nombre" value="{{ z.nombre }}" maxlength="60" required aria-label="Nombre de la zona" />
+          <button class="btn" type="submit">Guardar</button>
+        </form>
+        <button class="btn-link btn-link--peligro" type="button" data-api="DELETE {{ url_for('salon.api_zonas_eliminar', id_zona=z.id_zona) }}"
+                data-confirmar="¿Eliminar la zona {{ z.nombre }}? Sus mesas quedan sin zona.">Eliminar</button>
+      </li>
+    {% endfor %}
+  </ul>
+  <form class="form form--fila" data-api="POST {{ url_for('salon.api_zonas_crear') }}">
+    <input name="nombre" placeholder="Nueva zona" maxlength="60" required aria-label="Nueva zona" />
+    <button class="btn" type="submit">Crear zona</button>
+  </form>
+</section>
+
+<section class="tarjeta">
+  <h2>Mesas</h2>
+  <form class="form form--fila" data-api="POST {{ url_for('salon.api_mesas_crear') }}">
+    <input name="nombre" placeholder="Nombre (ej. 5 o Terraza 2)" maxlength="30" required aria-label="Nombre" />
+    <input name="capacidad" inputmode="numeric" placeholder="Puestos" value="4" aria-label="Puestos" />
+    {{ select_zona(none) }}
+    <button class="btn btn--primario" type="submit">Crear mesa</button>
+  </form>
+  <table class="tabla">
+    <thead><tr><th>Mesa</th><th>Puestos</th><th>Zona</th><th></th></tr></thead>
+    <tbody>
+    {% for m in mesas %}
+      <tr>
+        <td colspan="3">
+          <form class="form form--fila" data-api="PUT {{ url_for('salon.api_mesas_actualizar', id_mesa=m.id_mesa) }}">
+            <input name="nombre" value="{{ m.nombre }}" maxlength="30" required aria-label="Nombre" />
+            <input name="capacidad" value="{{ m.capacidad }}" inputmode="numeric" aria-label="Puestos" />
+            {{ select_zona(m.id_zona) }}
+            <button class="btn" type="submit">Guardar</button>
+          </form>
+        </td>
+        <td>
+          <button class="btn-link btn-link--peligro" type="button" data-api="DELETE {{ url_for('salon.api_mesas_eliminar', id_mesa=m.id_mesa) }}"
+                  data-confirmar="¿Eliminar la mesa {{ m.nombre }}?">Eliminar</button>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">Todavía no hay mesas.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

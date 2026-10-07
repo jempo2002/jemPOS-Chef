@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Caja{% endblock %}
+{% block content %}
+<h1>Caja</h1>
+{% if not turno %}
+  <p class="muted">La caja de esta sede está cerrada. Ábrela con el efectivo que hay para dar cambio.</p>
+  <section class="tarjeta">
+    <form class="form form--fila" data-api="POST {{ url_for('salon.api_caja_abrir') }}">
+      <label>Base en efectivo <input name="monto_inicial" inputmode="numeric" placeholder="0" /></label>
+      <button class="btn btn--primario" type="submit">Abrir caja</button>
+    </form>
+  </section>
+{% else %}
+  <p class="muted">Abierta desde {{ turno.abierto_desde }}.</p>
+  <section class="tarjeta">
+    <div class="cifras">
+      <div><small>Ventas</small><strong>{{ turno.ventas }}</strong></div>
+      <div><small>Total vendido</small><strong>{{ turno.total_ventas|pesos }}</strong></div>
+      <div><small>Propinas</small><strong>{{ turno.propinas|pesos }}</strong></div>
+      <div><small>Base</small><strong>{{ turno.monto_inicial|pesos }}</strong></div>
+      <div><small>Debe haber en efectivo</small><strong>{{ turno.esperado_en_caja|pesos }}</strong></div>
+    </div>
+    <p class="muted">La propina no cuenta como venta, pero la propina en efectivo sí está en el cajón y por eso suma a lo que debe haber.</p>
+  </section>
+  <section class="tarjeta">
+    <h2>Cerrar caja</h2>
+    <form class="form form--fila" data-api="POST {{ url_for('salon.api_caja_cerrar') }}"
+          data-confirmar="¿Cerrar la caja? Después no se puede cobrar hasta abrir otra.">
+      <label>Efectivo contado <input name="monto_final_real" inputmode="numeric" required /></label>
+      <label>Observaciones <input name="observaciones" maxlength="255" /></label>
+      <button class="btn btn--primario" type="submit">Cerrar caja</button>
+    </form>
+  </section>
+{% endif %}
+{% endblock %}

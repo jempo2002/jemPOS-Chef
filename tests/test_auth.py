@@ -47,7 +47,7 @@ def test_mesero_entra_a_su_sede_y_pierde_sesion_si_lo_mueven(client, crear, db):
     id_tienda, (centro, norte) = crear.tienda("cadena", sedes=("Centro", "Norte"))
     id_mesero = crear.usuario("mesero@chef.co", "Mesero", id_tienda, norte)
 
-    assert entrar(client, "mesero@chef.co").location.endswith("/inicio")
+    assert entrar(client, "mesero@chef.co").location.endswith("/mesas")  # el mesero entra al plano
     with client.session_transaction() as s:
         assert s["id_sede"] == norte
     # Su sede fija no se puede cambiar por la otra.

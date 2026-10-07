@@ -10,6 +10,10 @@
       <li class="{{ 'si' if incluida else 'no' }}">{{ texto }}{% if not incluida %} <small>(no incluida)</small>{% endif %}</li>
     {% endfor %}
   </ul>
-  <p class="muted">Mesas, comandas y caja llegan en los próximos módulos.</p>
+  {% if usuario.rol == 'Admin' %}
+    <p class="muted">Para empezar: arma la <a href="{{ url_for('salon.carta_page') }}">carta</a>, crea las
+      <a href="{{ url_for('salon.configurar_mesas_page') }}">mesas</a> de esta sede y abre la
+      <a href="{{ url_for('salon.caja_page') }}">caja</a>.</p>
+  {% endif %}
 </section>
 {% endblock %}

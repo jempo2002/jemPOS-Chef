@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Pedido{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/salon-comun.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/pedido.js') }}" defer></script>
+{% endblock %}
+{% block content %}
+<div id="pedido" data-mesa="{{ id_mesa }}" data-cobrar="{{ 1 if puede_cobrar else 0 }}" data-admin="{{ 1 if es_admin else 0 }}">
+  <div class="cabecera">
+    <div>
+      <a class="volver" href="{{ url_for('salon.mesas_page') }}">← Mesas</a>
+      <h1 id="titulo-mesa">Mesa</h1>
+      <p class="muted" id="info-pedido">Cargando…</p>
+    </div>
+    <div class="acciones">
+      <button class="btn" type="button" id="btn-mover" hidden>Mover o unir</button>
+      <button class="btn-link btn-link--peligro" type="button" id="btn-anular-cuenta" hidden>Anular cuenta</button>
+    </div>
+  </div>
+
+  <div class="pedido-layout">
+    <section class="tarjeta carta-pedido" aria-label="Carta">
+      <input type="search" id="buscar" placeholder="Buscar en la carta" aria-label="Buscar en la carta" autocomplete="off" />
+      <nav class="pestanas" id="categorias" aria-label="Categorías"></nav>
+      <div class="productos" id="productos"></div>
+      <p class="muted vacio" id="carta-vacia" hidden>La carta está vacía. El administrador la arma en Carta.</p>
+    </section>
+
+    <section class="tarjeta cuenta" aria-label="Cuenta">
+      <h2>Cuenta</h2>
+      <ul class="lineas" id="lineas"></ul>
+      <div id="bloque-nuevos" hidden>
+        <h3>Por agregar</h3>
+        <ul class="lineas" id="nuevos"></ul>
+      </div>
+      <p class="total">Total <strong id="total">$0</strong></p>
+      <div class="botones-cuenta">
+        <button class="btn btn--primario" type="button" id="btn-enviar">Enviar a cocina</button>
+        <button class="btn" type="button" id="btn-guardar">Guardar sin enviar</button>
+        <button class="btn" type="button" id="btn-precuenta">Precuenta</button>
+        <button class="btn btn--primario" type="button" id="btn-cobrar" hidden>Cobrar</button>
+        <button class="btn" type="button" id="btn-imprimir-comanda" hidden>Imprimir comanda</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<dialog id="dlg-cobro" class="dialogo">
+  <form method="dialog" id="form-cobro" class="form">
+    <h2>Cobrar <span id="cobro-mesa"></span></h2>
+    <p class="fila-total">Cuenta <strong id="cobro-total"></strong></p>
+    <label>Propina (voluntaria)
+      <span class="form--fila">
+        <input name="propina" id="cobro-propina" inputmode="numeric" />
+        <button class="btn" type="button" id="propina-sugerida">10 %</button>
+        <button class="btn" type="button" id="propina-cero">Sin propina</button>
+      </span>
+    </label>
+    <label>Método de pago
+      <select name="metodo" id="cobro-metodo">
+        <option value="efectivo">Efectivo</option>
+        <option value="nequi">Nequi / Daviplata / transferencia</option>
+        <option value="tarjeta">Tarjeta</option>
+        <option value="mixto">Mixto (efectivo + transferencia)</option>
+      </select>
+    </label>
+    <div id="cobro-mixto" class="form--fila" hidden>
+      <label>Efectivo <input name="monto_efectivo" id="cobro-efectivo" inputmode="numeric" /></label>
+      <label>Transferencia <input name="monto_transferencia" id="cobro-transferencia" inputmode="numeric" readonly /></label>
+    </div>
+    <label id="bloque-recibido">Recibido en efectivo (para calcular el cambio)
+      <input id="cobro-recibido" inputmode="numeric" />
+    </label>
+    <p class="fila-total">A pagar <strong id="cobro-apagar"></strong> <span class="muted" id="cobro-cambio"></span></p>
+    <div class="form--fila">
+      <button class="btn btn--primario" type="submit" value="ok">Cobrar</button>
+      <button class="btn" type="submit" value="cancelar" formnovalidate>Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-mover" class="dialogo">
+  <form method="dialog" class="form" id="form-mover">
+    <h2>Mover o unir cuenta</h2>
+    <p class="muted">Si la mesa elegida ya tiene cuenta, las dos se unen en ella.</p>
+    <select id="mover-destino" aria-label="Mesa destino"></select>
+    <div class="form--fila">
+      <button class="btn btn--primario" type="submit" value="ok">Mover</button>
+      <button class="btn" type="submit" value="cancelar" formnovalidate>Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-anular" class="dialogo">
+  <form method="dialog" class="form" id="form-anular">
+    <h2 id="anular-titulo">Anular</h2>
+    <p class="muted" id="anular-ayuda"></p>
+    <label>Motivo <input id="anular-motivo" maxlength="200" /></label>
+    <label class="check" id="bloque-devolver"><input type="checkbox" id="anular-devolver" /> No se alcanzó a preparar: devolver al inventario</label>
+    <div class="form--fila">
+      <button class="btn btn--peligro" type="submit" value="ok">Anular</button>
+      <button class="btn" type="submit" value="cancelar" formnovalidate>Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="impresion" class="impresion" aria-hidden="true"></div>
+{% endblock %}

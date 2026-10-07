@@ -97,11 +97,13 @@ def create_app() -> Flask:
     from app.routes.core import core
     from app.routes.master import master
     from app.routes.restaurante import restaurante
+    from app.routes.salon import salon
 
     app.register_blueprint(auth)
     app.register_blueprint(core)
     app.register_blueprint(master)
     app.register_blueprint(restaurante)
+    app.register_blueprint(salon)
 
     from app.utils.helpers import fmt_money
 

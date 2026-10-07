@@ -103,7 +103,7 @@ def sede_inicial(user: dict) -> dict | None:
 
 # Pantalla de entrada por rol. Caja, mesas y cocina llegan en sus propios
 # modulos; mientras tanto todos entran a /inicio.
-_INICIO_POR_ROL = {"master": "/panel-master"}
+_INICIO_POR_ROL = {"master": "/panel-master", "mesero": "/mesas", "cajero": "/mesas", "cocina": "/cocina"}
 
 
 def resolve_post_login_redirect(rol: str) -> str:
