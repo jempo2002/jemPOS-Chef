@@ -7,29 +7,41 @@
 {% block content %}
 <div class="cabecera">
   <div>
-    <h1>Mesas</h1>
-    <p class="muted" id="resumen-mesas">Cargando…</p>
+    <h1>Salón</h1>
+    <p class="muted" id="resumen-mesas">Cargando mesas…</p>
   </div>
   <div class="acciones">
-    {% if usuario.rol == 'Admin' %}<a class="btn" href="{{ url_for('salon.configurar_mesas_page') }}">Configurar mesas</a>{% endif %}
-    {% if puede_cobrar %}<a class="btn" href="{{ url_for('salon.caja_page') }}">Caja</a>{% endif %}
+    {% if usuario.rol == 'Admin' %}<a class="btn" href="{{ url_for('salon.configurar_mesas_page') }}">Editar mesas</a>{% endif %}
+    {% if puede_cobrar %}<a class="btn" href="{{ url_for('salon.caja_page') }}">Ir a caja</a>{% endif %}
+    <button class="btn btn--primario btn--llevar" type="button" id="btn-nuevo-llevar">
+      <span aria-hidden="true">+</span> Pedido para llevar
+    </button>
   </div>
 </div>
-<nav class="pestanas" id="zonas" aria-label="Zonas"></nav>
-<section class="plano" id="plano" aria-live="polite"></section>
-<p class="muted vacio" id="sin-mesas" hidden>
-  Esta sede todavía no tiene mesas.
-  {% if usuario.rol == 'Admin' %}<a href="{{ url_for('salon.configurar_mesas_page') }}">Crea las mesas</a>.{% else %}Pide al administrador que las cree.{% endif %}
-</p>
-<div class="seccion-llevar">
-  <h2>Para llevar</h2>
-  <button class="btn btn--primario" type="button" id="btn-nuevo-llevar">Nuevo para llevar</button>
+
+<ul class="conteo" id="conteo" aria-label="Resumen de mesas">
+  <li class="conteo__item conteo__item--libre"><span class="punto"></span><strong data-conteo="libre">0</strong> libres</li>
+  <li class="conteo__item conteo__item--abierto"><span class="punto"></span><strong data-conteo="abierto">0</strong> ocupadas</li>
+  <li class="conteo__item conteo__item--por_cobrar"><span class="punto"></span><strong data-conteo="por_cobrar">0</strong> piden la cuenta</li>
+</ul>
+
+<div class="salon">
+  <section class="salon__mesas" aria-labelledby="titulo-mesas">
+    <h2 class="sr-only" id="titulo-mesas">Mesas</h2>
+    <nav class="pestanas" id="zonas" aria-label="Zonas"></nav>
+    <div class="plano" id="plano" aria-live="polite"></div>
+    <p class="muted vacio" id="sin-mesas" hidden>
+      Esta sede todavía no tiene mesas.
+      {% if usuario.rol == 'Admin' %}<a href="{{ url_for('salon.configurar_mesas_page') }}">Crea las mesas aquí</a>.{% else %}Pídele al administrador que las cree.{% endif %}
+    </p>
+  </section>
+
+  <aside class="salon__llevar tarjeta" aria-labelledby="titulo-llevar">
+    <h2 id="titulo-llevar">Para llevar <span class="chip" id="cuenta-llevar">0</span></h2>
+    <div class="lista-llevar" id="llevar" aria-live="polite"></div>
+    <p class="muted vacio-llevar" id="sin-llevar" hidden>
+      No hay pedidos para llevar en curso. Usa <strong>Pedido para llevar</strong> cuando un cliente pida algo para llevarse.
+    </p>
+  </aside>
 </div>
-<section class="plano" id="llevar" aria-live="polite"></section>
-<p class="muted vacio" id="sin-llevar" hidden>No hay pedidos para llevar pendientes.</p>
-<p class="leyenda muted">
-  <span class="punto punto--libre"></span> Libre
-  <span class="punto punto--abierto"></span> Ocupada
-  <span class="punto punto--por_cobrar"></span> Pidió la cuenta
-</p>
 {% endblock %}
