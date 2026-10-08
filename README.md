@@ -36,6 +36,14 @@ python scripts/crear_master.py "Tu nombre" tu@correo.com
 python run.py                   # http://127.0.0.1:5000
 ```
 
+### Migrar la base de Railway desde Windows
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\migrar_railway.ps1
+```
+
+Pide la `MYSQL_PUBLIC_URL` del servicio MySQL (Railway › MySQL › Variables), sin mostrarla, y aplica `db/schema.sql` y todas las migraciones en orden. Se puede repetir sin riesgo.
+
 ### Probar mesas y comandas con datos de ejemplo
 
 ```bash
