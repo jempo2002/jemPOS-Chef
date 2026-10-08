@@ -42,7 +42,7 @@ python run.py                   # http://127.0.0.1:5000
 powershell -ExecutionPolicy Bypass -File scripts\migrar_railway.ps1
 ```
 
-Pide la `MYSQL_PUBLIC_URL` del servicio MySQL (Railway › MySQL › Variables), sin mostrarla, y aplica `db/schema.sql` y todas las migraciones en orden. Se puede repetir sin riesgo.
+Toma la `MYSQL_PUBLIC_URL` del servicio MySQL (Railway › MySQL › Variables) de una línea `MYSQL_PUBLIC_URL=...` en el `.env` local, o la pide sin mostrarla, y aplica `db/schema.sql` y todas las migraciones en orden. Se puede repetir sin riesgo. Con `-Nombre "Tu nombre" -Correo tu@correo.com` crea además el usuario Master en esa base.
 
 ### Probar mesas y comandas con datos de ejemplo
 

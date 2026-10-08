@@ -2,21 +2,33 @@
 # nombre) a la base MySQL de Railway, desde Windows.
 #
 #   .\scripts\migrar_railway.ps1
+#   .\scripts\migrar_railway.ps1 -Nombre "Tu nombre" -Correo tu@correo.com
 #
-# Pide la MYSQL_PUBLIC_URL del servicio MySQL en Railway (Variables >
-# MYSQL_PUBLIC_URL, la que tiene ...proxy.rlwy.net) sin mostrarla en pantalla.
-# Las credenciales solo viven en esta ventana mientras corre: no toca el .env.
+# Usa la MYSQL_PUBLIC_URL del servicio MySQL en Railway (Variables >
+# MYSQL_PUBLIC_URL, la que tiene ...proxy.rlwy.net): la toma de la linea
+# MYSQL_PUBLIC_URL=... del .env local si esta, y si no la pide sin mostrarla.
+# Con -Nombre y -Correo crea ademas el usuario Master en esa misma base.
+# Las credenciales de Railway solo viven en esta ventana mientras corre.
 #
 # Se puede correr varias veces: run_migration.py trata como hecho lo que ya
 # existe. Para antes de seguir si una migracion falla.
+
+param([string]$Nombre, [string]$Correo)
 
 $ErrorActionPreference = "Stop"
 $raiz = Split-Path -Parent $PSScriptRoot
 Set-Location $raiz
 
-$segura = Read-Host "Pega la MYSQL_PUBLIC_URL de Railway" -AsSecureString
-$url = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($segura))
+$url = ""
+if (Test-Path .env) {
+    $linea = Get-Content .env | Where-Object { $_ -match '^\s*MYSQL_PUBLIC_URL\s*=' } | Select-Object -First 1
+    if ($linea) { $url = ($linea -split "=", 2)[1].Trim().Trim('"') }
+}
+if (-not $url) {
+    $segura = Read-Host "Pega la MYSQL_PUBLIC_URL de Railway" -AsSecureString
+    $url = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($segura))
+}
 $url = $url.Trim()
 if (-not $url.StartsWith("mysql://")) {
     throw "Eso no parece una MYSQL_PUBLIC_URL (debe empezar por mysql://)."
@@ -42,6 +54,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Fallo $archivo. No se aplicaron las siguientes." }
     }
     Write-Host "Listo: base de Railway al dia." -ForegroundColor Green
+    if ($Nombre -and $Correo) {
+        & $python scripts\crear_master.py $Nombre $Correo
+        if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el usuario Master." }
+    }
 }
 finally {
     Remove-Item Env:DB_HOST, Env:DB_PORT, Env:DB_USER, Env:DB_PASSWORD, Env:DB_NAME -ErrorAction SilentlyContinue
