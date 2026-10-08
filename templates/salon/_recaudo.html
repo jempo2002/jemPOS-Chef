@@ -1,0 +1,24 @@
+{# Panel de Caja para el control de domiciliarios. Lo pinta static/js/recaudo.js. #}
+<section class="tarjeta recaudo" id="recaudo" aria-labelledby="titulo-recaudo"
+         data-admin="{{ 1 if usuario.rol == 'Admin' else 0 }}" data-caja="{{ 1 if turno else 0 }}">
+  <div class="cabecera">
+    <div>
+      <h2 id="titulo-recaudo">Domiciliarios</h2>
+      <p class="muted" id="recaudo-resumen">Cargando…</p>
+    </div>
+    <a class="btn" href="{{ url_for('domicilios.domicilios_page') }}">Ver domicilios</a>
+  </div>
+  <div class="recaudo__tarjetas" id="recaudo-tarjetas" aria-live="polite"></div>
+  <p class="muted" id="recaudo-vacio" hidden>
+    No hay domiciliarios registrados. Agrégalos en <a href="{{ url_for('domicilios.domicilios_page') }}">Domicilios</a>.
+  </p>
+  {% if usuario.rol == 'Admin' %}
+  <form class="form form--fila recaudo__tope" id="form-tope">
+    <label class="campo-corto">Avisar cuando un domiciliario lleve más de
+      <input name="tope" id="recaudo-tope" inputmode="numeric" required /> en efectivo</label>
+    <button class="btn" type="submit">Guardar</button>
+  </form>
+  {% endif %}
+</section>
+<script src="{{ url_for('static', filename='js/salon-comun.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/recaudo.js') }}" defer></script>

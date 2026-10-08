@@ -92,6 +92,7 @@ def test_ciclo_completo_descuenta_al_enviar_y_cobra_con_propina(salon, crear):
 
     caja = salon.cajero.get("/api/caja").get_json()["turno"]
     assert caja["esperado_en_caja"] == 50000 + 48400 and caja["propinas"] == 4400 and caja["total_ventas"] == 44000
+    assert caja["nequi"] == 0
 
     # El mismo cobro reenviado no cobra dos veces; la mesa quedo libre.
     r = salon.cajero.post(f"/api/mesas/{salon.mesa}/cobrar", json=pago)

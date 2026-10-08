@@ -14,10 +14,19 @@ from mysql.connector import IntegrityError
 
 from app.services.errores import Conflicto
 from app.utils.helpers import ahora_local
-from app.utils.validation import parse_float, sanitize_optional_text
+from app.utils.validation import parse_float, sanitize_optional_text, sanitize_text
 from database import get_db
 
 MONTO_MAX = 100_000_000
+MAX_GASTOS_LISTA = 50
+# Lo que manda la pantalla -> gastos_caja.metodo_pago
+METODOS_GASTO = {
+    "efectivo": "Efectivo",
+    "nequi": "Nequi/Daviplata",
+    "transferencia": "Nequi/Daviplata",
+    "tarjeta": "Tarjeta",
+    "mixto": "Mixto",
+}
 
 
 def siguiente_consecutivo(cur, id_tienda: int, clave: str) -> int:
@@ -43,14 +52,50 @@ def turno_abierto(cur, id_sede: int, bloquear: bool = False) -> dict | None:
 
 
 def _resumen(cur, turno: dict) -> dict:
+    """Cifras del turno. Nequi = lo que debe haber entrado por Nequi/Daviplata
+    (con su propina). En una venta Mixto de cuenta dividida se suman solo las
+    partes pagadas por Nequi y la transferencia de las partes Mixto (la
+    transferencia de esa venta puede incluir tarjeta); en un Mixto cobrado de
+    una vez, la transferencia es Nequi."""
     cur.execute(
-        "SELECT COUNT(*) AS ventas, COALESCE(SUM(total_final), 0) AS total, COALESCE(SUM(propina), 0) AS propinas, "
-        "COALESCE(SUM(CASE metodo_pago WHEN 'Efectivo' THEN total_final + propina "
-        "  WHEN 'Mixto' THEN monto_efectivo ELSE 0 END), 0) AS efectivo "
-        "FROM ventas WHERE id_turno = %s AND estado_venta = 'Pagada'",
-        (turno["id_turno"],),
+        "SELECT COUNT(*) AS ventas, COALESCE(SUM(v.total_final), 0) AS total, COALESCE(SUM(v.propina), 0) AS propinas, "
+        "COALESCE(SUM(CASE v.metodo_pago WHEN 'Efectivo' THEN v.total_final + v.propina "
+        "  WHEN 'Mixto' THEN v.monto_efectivo ELSE 0 END), 0) AS efectivo, "
+        "COALESCE(SUM(CASE WHEN v.metodo_pago = 'Nequi/Daviplata' THEN v.total_final + v.propina "
+        "  WHEN v.metodo_pago = 'Mixto' THEN COALESCE(pc.nequi, v.monto_transferencia, 0) ELSE 0 END), 0) AS nequi "
+        "FROM ventas v "
+        "LEFT JOIN (SELECT c.id_venta, SUM(CASE WHEN c.metodo_pago = 'Nequi/Daviplata' THEN c.monto + c.propina "
+        "    WHEN c.metodo_pago = 'Mixto' THEN c.monto_transferencia ELSE 0 END) AS nequi "
+        "  FROM pedido_cuentas c JOIN ventas vc ON vc.id_venta = c.id_venta "
+        "  WHERE vc.id_turno = %s AND vc.metodo_pago = 'Mixto' GROUP BY c.id_venta) pc ON pc.id_venta = v.id_venta "
+        "WHERE v.id_turno = %s AND v.estado_venta = 'Pagada'",
+        (turno["id_turno"], turno["id_turno"]),
     )
     r = cur.fetchone()
+    cur.execute(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(monto), 0) AS total, "
+        "COALESCE(SUM(CASE WHEN fuente_dinero = 'Bancos' THEN 0 ELSE monto - monto_transferencia END), 0) AS efectivo "
+        "FROM gastos_caja WHERE id_turno = %s",
+        (turno["id_turno"],),
+    )
+    gastos = cur.fetchone()
+    cur.execute(
+        "SELECT id_gasto, concepto, monto, monto_transferencia, metodo_pago, fecha_creacion FROM gastos_caja "
+        "WHERE id_turno = %s ORDER BY id_gasto DESC LIMIT %s",
+        (turno["id_turno"], MAX_GASTOS_LISTA),
+    )
+    lista = [
+        {
+            "id_gasto": g["id_gasto"],
+            "concepto": g["concepto"],
+            "monto": float(g["monto"]),
+            "efectivo": float(Decimal(g["monto"]) - Decimal(g["monto_transferencia"] or 0)),
+            "transferencia": float(g["monto_transferencia"] or 0),
+            "metodo_pago": g["metodo_pago"] or "",
+            "hora": g["fecha_creacion"].strftime("%H:%M") if g["fecha_creacion"] else "",
+        }
+        for g in cur.fetchall()
+    ]
     inicial = Decimal(turno["monto_inicial"] or 0)
     return {
         "id_turno": turno["id_turno"],
@@ -60,6 +105,11 @@ def _resumen(cur, turno: dict) -> dict:
         "total_ventas": float(r["total"]),
         "propinas": float(r["propinas"]),
         "efectivo_ventas": float(r["efectivo"]),
+        "nequi": float(r["nequi"]),
+        "gastos": int(gastos["n"]),
+        "total_gastos": float(gastos["total"]),
+        "gastos_efectivo": float(gastos["efectivo"]),
+        "lista_gastos": lista,
         "esperado_en_caja": float(Decimal(turno["monto_final_esperado"] or inicial)),
     }
 
@@ -96,6 +146,54 @@ def abrir(id_tienda: int, id_sede: int, id_usuario: int, data: dict) -> int:
         raise
     finally:
         conn.close()
+
+
+def registrar_gasto(id_tienda: int, id_sede: int, id_usuario: int, data: dict) -> dict:
+    """Gasto pagado durante el turno de la sede. Efectivo sale del cajon;
+    Nequi/Daviplata o tarjeta salen del banco; Mixto: `monto_efectivo` sale
+    del cajon y el resto del banco. Solo lo que sale del cajon baja lo que
+    debe haber al cerrar."""
+    concepto = sanitize_text(data.get("concepto"), "El concepto", max_len=150)
+    monto = Decimal(str(round(parse_float(data.get("monto"), "El monto", min_value=0, max_value=MONTO_MAX,
+                                          allow_zero=False), 2)))
+    metodo = METODOS_GASTO.get(str(data.get("metodo") or "").strip().lower())
+    if not metodo:
+        raise ValueError("Método de pago invalido.")
+    if metodo == "Efectivo":
+        efectivo = monto
+    elif metodo == "Mixto":
+        efectivo = Decimal(str(round(parse_float(data.get("monto_efectivo"), "El efectivo", min_value=0,
+                                                 allow_zero=False), 2)))
+        if efectivo >= monto:
+            raise ValueError("En un pago mixto el efectivo debe ser menor que el monto; si es todo en efectivo elige Efectivo.")
+    else:
+        efectivo = Decimal(0)
+    fuente = "Caja Menor" if efectivo else "Bancos"
+    conn = get_db()
+    try:
+        cur = conn.cursor(dictionary=True)
+        turno = turno_abierto(cur, id_sede, bloquear=True)
+        if not turno:
+            raise Conflicto("Abre la caja antes de registrar gastos.")
+        cur.execute(
+            "INSERT INTO gastos_caja (id_tienda, id_turno, id_usuario, concepto, monto, monto_transferencia, "
+            "metodo_pago, fuente_dinero) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (id_tienda, turno["id_turno"], id_usuario, concepto, monto, monto - efectivo, metodo, fuente),
+        )
+        id_gasto = cur.lastrowid
+        if efectivo:
+            cur.execute(
+                "UPDATE turnos_caja SET monto_final_esperado = COALESCE(monto_final_esperado, monto_inicial, 0) - %s "
+                "WHERE id_turno = %s",
+                (efectivo, turno["id_turno"]),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return {"id_gasto": id_gasto, "monto": float(monto), "efectivo": float(efectivo), "metodo_pago": metodo}
 
 
 def cerrar(id_tienda: int, id_sede: int, id_usuario: int, data: dict) -> dict:

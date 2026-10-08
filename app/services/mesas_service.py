@@ -9,11 +9,17 @@ from __future__ import annotations
 
 from mysql.connector import IntegrityError
 
+from datetime import timedelta
+
 from app.services.errores import Conflicto, NoEncontrado
+from app.utils.helpers import ahora_local
 from app.utils.validation import parse_int, sanitize_text
 from database import get_db
 
 MAX_MESAS_POR_SEDE = 150
+# Un para llevar cobrado sigue en la lista hasta que se entrega; si nadie lo
+# marca, sale solo despues de este tiempo.
+HORAS_LLEVAR_COBRADO = 12
 
 
 def _zona_de_sede(cur, id_sede: int, id_zona) -> int | None:
@@ -195,7 +201,9 @@ def mesa_de_sede(cur, id_sede: int, id_mesa: int, bloquear: bool = False) -> dic
 def plano(id_sede: int) -> dict:
     """Zonas y mesas de la sede con el pedido abierto de cada una: total,
     mesero, minutos abierta, items sin enviar y comandas listas para
-    recoger. Tres consultas, sin una por mesa."""
+    recoger. Tambien los pedidos para llevar sin entregar (abiertos, o
+    cobrados en las ultimas HORAS_LLEVAR_COBRADO). Cuatro consultas, sin una
+    por mesa."""
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
@@ -215,23 +223,36 @@ def plano(id_sede: int) -> dict:
             (id_sede,),
         )
         mesas = cur.fetchall()
-        pedidos = [m["id_pedido"] for m in mesas if m["id_pedido"]]
+        cur.execute(
+            "SELECT p.id_pedido, p.uuid_cliente AS uuid, p.numero_llevar AS numero, p.cliente_nombre AS cliente, "
+            "p.estado, u.nombre_completo AS mesero, TIMESTAMPDIFF(MINUTE, p.abierto_en, NOW()) AS minutos "
+            "FROM pedidos p LEFT JOIN usuarios u ON u.id_usuario = p.id_mesero "
+            "WHERE p.id_sede = %s AND p.tipo = 'llevar' AND p.entregado_en IS NULL "
+            "AND (p.estado IN ('abierto', 'por_cobrar') OR (p.estado = 'cerrado' AND p.cerrado_en >= %s)) "
+            "ORDER BY p.id_pedido",
+            (id_sede, ahora_local() - timedelta(hours=HORAS_LLEVAR_COBRADO)),
+        )
+        llevar = cur.fetchall()
+        pedidos = [m["id_pedido"] for m in mesas if m["id_pedido"]] + [p["id_pedido"] for p in llevar]
         totales: dict[int, dict] = {}
         if pedidos:
             marcadores = ", ".join(["%s"] * len(pedidos))
             cur.execute(
                 "SELECT id_pedido, SUM(cantidad * precio_unitario) AS total, "
-                "SUM(estado = 'pendiente') AS sin_enviar, SUM(estado = 'listo') AS listos "
+                "SUM(estado = 'pendiente') AS sin_enviar, SUM(estado = 'listo') AS listos, "
+                "SUM(estado IN ('enviado', 'listo')) AS en_cocina "
                 f"FROM pedido_items WHERE estado <> 'anulado' AND id_pedido IN ({marcadores}) GROUP BY id_pedido",
                 tuple(pedidos),
             )
             totales = {f["id_pedido"]: f for f in cur.fetchall()}
     finally:
         conn.close()
-    for m in mesas:
+    for m in mesas + llevar:
         t = totales.get(m["id_pedido"]) or {}
         m["total"] = float(t.get("total") or 0)
         m["sin_enviar"] = int(t.get("sin_enviar") or 0)
         m["listos"] = int(t.get("listos") or 0)
+        m["en_cocina"] = int(t.get("en_cocina") or 0)
+    for m in mesas:
         m["estado"] = m["estado"] or "libre"
-    return {"zonas": zonas, "mesas": mesas}
+    return {"zonas": zonas, "mesas": mesas, "llevar": llevar}

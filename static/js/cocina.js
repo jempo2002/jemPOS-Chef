@@ -42,7 +42,7 @@
   function tarjeta(c) {
     var t = el('article', 'comanda comanda--' + c.estado + (c.minutos >= 20 ? ' comanda--tarde' : ''));
     var cab = el('header', 'comanda__cab');
-    cab.appendChild(el('strong', '', 'Mesa ' + c.mesa));
+    cab.appendChild(el('strong', '', (c.llevar ? '' : 'Mesa ') + c.mesa));
     cab.appendChild(el('span', '', '#' + c.numero + ' · ' + c.minutos + ' min'));
     t.appendChild(cab);
     var ul = el('ul', 'comanda__items');

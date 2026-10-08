@@ -5,15 +5,18 @@
 <script src="{{ url_for('static', filename='js/pedido.js') }}" defer></script>
 {% endblock %}
 {% block content %}
-<div id="pedido" data-mesa="{{ id_mesa }}" data-cobrar="{{ 1 if puede_cobrar else 0 }}" data-admin="{{ 1 if es_admin else 0 }}">
+<div id="pedido" data-mesa="{{ id_mesa or '' }}" data-llevar="{{ llevar or '' }}" data-domicilio="{{ 1 if domicilio else 0 }}" data-cobrar="{{ 1 if puede_cobrar else 0 }}"
+     data-admin="{{ 1 if es_admin else 0 }}" data-dividir="{{ 1 if dividir else 0 }}">
   <div class="cabecera">
     <div>
-      <a class="volver" href="{{ url_for('salon.mesas_page') }}">← Mesas</a>
-      <h1 id="titulo-mesa">Mesa</h1>
+      {% if domicilio %}<a class="volver" id="volver" href="{{ url_for('domicilios.domicilios_page') }}">← Domicilios</a>
+      {% else %}<a class="volver" id="volver" href="{{ url_for('salon.mesas_page') }}">← Mesas</a>{% endif %}
+      <h1 id="titulo-mesa">{{ 'Domicilio' if domicilio else ('Para llevar' if llevar else 'Mesa') }}</h1>
       <p class="muted" id="info-pedido">Cargando…</p>
     </div>
     <div class="acciones">
       <button class="btn" type="button" id="btn-mover" hidden>Mover o unir</button>
+      <button class="btn" type="button" id="btn-entregar" hidden>Entregado al cliente</button>
       <button class="btn-link btn-link--peligro" type="button" id="btn-anular-cuenta" hidden>Anular cuenta</button>
     </div>
   </div>
@@ -28,6 +31,15 @@
 
     <section class="tarjeta cuenta" aria-label="Cuenta">
       <h2>Cuenta</h2>
+      {% if llevar %}
+      <div class="form--fila cliente-llevar" id="bloque-cliente">
+        <label>Cliente <input id="cliente-nombre" maxlength="80" placeholder="Nombre" autocomplete="off" /></label>
+        <label>Teléfono <input id="cliente-telefono" maxlength="20" inputmode="tel" placeholder="Opcional" autocomplete="off" /></label>
+        <label class="cliente-direccion" id="bloque-direccion" hidden>Dirección
+          <input id="cliente-direccion" maxlength="160" placeholder="Calle, número, barrio y referencia" autocomplete="off" /></label>
+      </div>
+      <p class="aviso" id="aviso-domicilio" hidden></p>
+      {% endif %}
       <ul class="lineas" id="lineas"></ul>
       <div id="bloque-nuevos" hidden>
         <h3>Por agregar</h3>
@@ -39,6 +51,7 @@
         <button class="btn" type="button" id="btn-guardar">Guardar sin enviar</button>
         <button class="btn" type="button" id="btn-precuenta">Precuenta</button>
         <button class="btn btn--primario" type="button" id="btn-cobrar" hidden>Cobrar</button>
+        <button class="btn" type="button" id="btn-dividir" hidden>Dividir cuenta</button>
         <button class="btn" type="button" id="btn-imprimir-comanda" hidden>Imprimir comanda</button>
       </div>
     </section>
@@ -75,6 +88,47 @@
     <div class="form--fila">
       <button class="btn btn--primario" type="submit" value="ok">Cobrar</button>
       <button class="btn" type="submit" value="cancelar" formnovalidate>Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-dividir" class="dialogo dialogo--ancho">
+  <form method="dialog" class="form" id="form-dividir">
+    <h2>Dividir cuenta <span class="muted" id="div-total"></span></h2>
+    <nav class="pestanas" aria-label="Cómo dividir">
+      <button class="pestana" type="button" data-modo="items">Por productos</button>
+      <button class="pestana" type="button" data-modo="iguales">Partes iguales</button>
+    </nav>
+    <div id="div-iguales" hidden>
+      <label>Entre cuántas personas
+        <span class="form--fila">
+          <button class="btn btn--mini" type="button" id="div-menos">−</button>
+          <strong id="div-n">2</strong>
+          <button class="btn btn--mini" type="button" id="div-mas">+</button>
+        </span>
+      </label>
+    </div>
+    <div id="div-items">
+      <p class="muted">Elige una cuenta y toca los productos que paga. Cada toque pasa una unidad.</p>
+      <nav class="pestanas" id="div-cuentas" aria-label="Cuentas"></nav>
+      <div class="dividir-columnas">
+        <div>
+          <h3>Sin repartir</h3>
+          <ul class="lineas lineas--tocables" id="div-sin"></ul>
+        </div>
+        <div>
+          <h3 id="div-activa"></h3>
+          <ul class="lineas lineas--tocables" id="div-asignados"></ul>
+        </div>
+      </div>
+    </div>
+    <h3>Quién paga qué</h3>
+    <ul class="lineas" id="div-partes"></ul>
+    <p class="fila-total">A pagar <strong id="div-apagar"></strong></p>
+    <div class="form--fila">
+      <button class="btn btn--primario" type="submit" value="ok" id="div-cobrar">Cobrar las cuentas</button>
+      <button class="btn" type="button" id="div-imprimir">Imprimir cuentas</button>
+      <button class="btn" type="submit" value="cancelar" formnovalidate>Cerrar</button>
     </div>
   </form>
 </dialog>
