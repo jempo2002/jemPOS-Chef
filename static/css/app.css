@@ -377,3 +377,36 @@ details[open] { flex-basis: 100%; }
 .cliente-llevar .cliente-direccion { flex-basis: 100%; }
 .recaudo__domicilio .linea__info { flex: 1 1 8rem; }
 .recaudo__regresar { justify-self: start; min-height: 32px; padding: 0; font-size: 0.85rem; }
+
+/* Reportes */
+.filtros { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: flex-end; margin: 0.75rem 0 0; }
+.filtros label { display: grid; gap: 0.2rem; font-weight: 600; font-size: 0.85rem; }
+.filtros__rango { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; }
+.filtros select, .filtros input { min-height: var(--toque); }
+.cifras--kpi strong { font-size: 1.5rem; }
+.variacion { font-weight: 600; }
+.variacion--sube { color: var(--ok); }
+.variacion--baja { color: var(--peligro); }
+.reportes-columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 0 1rem; }
+.estado-resultados td { padding: 0.45rem 0.25rem; }
+.estado-resultados .er-total td { font-weight: 800; border-top: 2px solid var(--texto); }
+.num { text-align: right; white-space: nowrap; }
+.tabla th.num { text-align: right; }
+.separado { margin-top: 1.25rem; }
+.barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.barras li { display: grid; grid-template-columns: minmax(6rem, 9rem) 1fr auto; gap: 0.6rem; align-items: center; font-size: 0.92rem; }
+.barra-dato { width: 100%; height: 0.7rem; border-radius: 4px; background: var(--fondo); }
+.barra-dato rect, .columnas rect { fill: var(--primario-500); }
+.columnas { width: 100%; height: 10rem; display: block; }
+.columnas rect.columnas__fondo { fill: transparent; }
+.columnas g:hover rect:not(.columnas__fondo) { fill: var(--primario); }
+.columnas__eje { display: flex; justify-content: space-between; color: var(--texto-suave); margin: 0.25rem 0 0.5rem; }
+.fila--anulada td { opacity: 0.6; }
+.fila--anulada td strong { text-decoration: line-through; }
+.texto-ok { color: var(--ok); font-weight: 600; }
+.paginador { display: flex; gap: 0.75rem; align-items: center; justify-content: center; margin-top: 0.75rem; }
+@media (max-width: 40rem) {
+  .barras li { grid-template-columns: 1fr auto; }
+  .barras li .barra-dato { grid-column: 1 / -1; order: 3; }
+  .tabla--tarjetas td.num { text-align: left; }
+}

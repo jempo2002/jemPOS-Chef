@@ -763,9 +763,12 @@ def _registrar_venta(cur, id_tienda: int, id_sede: int, id_usuario: int, turno: 
     )
     id_venta = cur.lastrowid
     cur.executemany(
-        "INSERT INTO detalle_ventas (id_venta, id_producto, cantidad, unidad_venta, precio_unitario_historico, subtotal_linea) "
-        "VALUES (%s, %s, %s, 'Unidad', %s, %s)",
-        [(id_venta, pid, cant, precio, sub) for pid, cant, precio, sub in detalle],
+        # El costo de hoy (receta o carta) queda fijo en la venta: la utilidad
+        # de un mes cerrado no cambia si despues sube un insumo.
+        "INSERT INTO detalle_ventas (id_venta, id_producto, cantidad, unidad_venta, precio_unitario_historico, "
+        "costo_unitario_historico, subtotal_linea) "
+        "SELECT %s, p.id_producto, %s, 'Unidad', %s, p.precio_costo, %s FROM productos p WHERE p.id_producto = %s",
+        [(id_venta, cant, precio, sub, pid) for pid, cant, precio, sub in detalle],
     )
     al_cajon = a_pagar if metodo == "Efectivo" else (efectivo or Decimal(0))
     if al_cajon:

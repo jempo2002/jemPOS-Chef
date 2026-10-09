@@ -18,6 +18,7 @@ from app.services import (
     caja_service,
     carta_service,
     cocina_service,
+    gastos_service,
     inventario_service,
     mesas_service,
     pedidos_service,
@@ -104,7 +105,8 @@ def cocina_page():
 @login_required
 @roles_required(*CAJA)
 def caja_page():
-    return render_template("salon/caja.html", turno=caja_service.estado(g.id_sede))
+    return render_template("salon/caja.html", turno=caja_service.estado(g.id_sede),
+                           categorias=gastos_service.CATEGORIAS)
 
 
 @salon.get("/carta")

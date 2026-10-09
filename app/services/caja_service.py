@@ -13,6 +13,7 @@ from decimal import Decimal
 from mysql.connector import IntegrityError
 
 from app.services.errores import Conflicto
+from app.services.gastos_service import categoria_valida
 from app.utils.helpers import ahora_local
 from app.utils.validation import parse_float, sanitize_optional_text, sanitize_text
 from database import get_db
@@ -75,19 +76,20 @@ def _resumen(cur, turno: dict) -> dict:
     cur.execute(
         "SELECT COUNT(*) AS n, COALESCE(SUM(monto), 0) AS total, "
         "COALESCE(SUM(CASE WHEN fuente_dinero = 'Bancos' THEN 0 ELSE monto - monto_transferencia END), 0) AS efectivo "
-        "FROM gastos_caja WHERE id_turno = %s",
+        "FROM gastos_caja WHERE id_turno = %s AND estado_activo = 1",
         (turno["id_turno"],),
     )
     gastos = cur.fetchone()
     cur.execute(
-        "SELECT id_gasto, concepto, monto, monto_transferencia, metodo_pago, fecha_creacion FROM gastos_caja "
-        "WHERE id_turno = %s ORDER BY id_gasto DESC LIMIT %s",
+        "SELECT id_gasto, concepto, categoria, monto, monto_transferencia, metodo_pago, fecha_creacion FROM gastos_caja "
+        "WHERE id_turno = %s AND estado_activo = 1 ORDER BY id_gasto DESC LIMIT %s",
         (turno["id_turno"], MAX_GASTOS_LISTA),
     )
     lista = [
         {
             "id_gasto": g["id_gasto"],
             "concepto": g["concepto"],
+            "categoria": g["categoria"],
             "monto": float(g["monto"]),
             "efectivo": float(Decimal(g["monto"]) - Decimal(g["monto_transferencia"] or 0)),
             "transferencia": float(g["monto_transferencia"] or 0),
@@ -154,6 +156,7 @@ def registrar_gasto(id_tienda: int, id_sede: int, id_usuario: int, data: dict) -
     del cajon y el resto del banco. Solo lo que sale del cajon baja lo que
     debe haber al cerrar."""
     concepto = sanitize_text(data.get("concepto"), "El concepto", max_len=150)
+    categoria = categoria_valida(data.get("categoria"))
     monto = Decimal(str(round(parse_float(data.get("monto"), "El monto", min_value=0, max_value=MONTO_MAX,
                                           allow_zero=False), 2)))
     metodo = METODOS_GASTO.get(str(data.get("metodo") or "").strip().lower())
@@ -176,9 +179,10 @@ def registrar_gasto(id_tienda: int, id_sede: int, id_usuario: int, data: dict) -
         if not turno:
             raise Conflicto("Abre la caja antes de registrar gastos.")
         cur.execute(
-            "INSERT INTO gastos_caja (id_tienda, id_turno, id_usuario, concepto, monto, monto_transferencia, "
-            "metodo_pago, fuente_dinero) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (id_tienda, turno["id_turno"], id_usuario, concepto, monto, monto - efectivo, metodo, fuente),
+            "INSERT INTO gastos_caja (id_tienda, id_sede, id_turno, id_usuario, concepto, categoria, monto, "
+            "monto_transferencia, metodo_pago, fuente_dinero) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (id_tienda, id_sede, turno["id_turno"], id_usuario, concepto, categoria, monto, monto - efectivo, metodo,
+             fuente),
         )
         id_gasto = cur.lastrowid
         if efectivo:

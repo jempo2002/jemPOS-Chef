@@ -18,6 +18,7 @@
         {% if usuario.rol in ('Admin', 'Cocina') %}<a href="{{ url_for('salon.cocina_page') }}">Cocina</a>{% endif %}
         {% if usuario.rol in ('Admin', 'Cajero') %}<a href="{{ url_for('salon.caja_page') }}">Caja</a>{% endif %}
         {% if usuario.rol == 'Admin' %}
+          <a href="{{ url_for('reportes.reportes_page') }}">Reportes</a>
           <a href="{{ url_for('salon.carta_page') }}">Carta</a>
           <a href="{{ url_for('recetas.recetas_page') }}">Recetas</a>
           <a href="{{ url_for('restaurante.sedes_page') }}">Sedes</a>
