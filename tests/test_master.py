@@ -53,7 +53,7 @@ def test_montaje_pendiente_y_cobrado(client, crear):
     )
     pagina = client.get("/panel-master").get_data(as_text=True)
     assert "Montaje pendiente $79.000" in pagina
-    assert "$103.500" in pagina  # 69.000 + 34.500
+    assert "$114.000" in pagina  # 69.000 + 45.000
     r = client.post(f"/api/master/restaurantes/{id_tienda}/montaje")
     assert r.status_code == 200 and "$79.000" in r.get_json()["msg"]
     assert client.post(f"/api/master/restaurantes/{id_tienda}/montaje").status_code == 404

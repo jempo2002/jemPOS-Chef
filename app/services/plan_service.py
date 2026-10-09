@@ -11,11 +11,10 @@ Multisede (reglas de jempo, 2026-10-07; ajustadas el 2026-10-09, igual en
 todos sus productos): solo Completo y Cadena. Traen SEDES_INCLUIDAS sedes y
 se pueden abrir mas, sin tope: el que abre otra sede la paga. El mismo Admin
 maneja todas las sedes y el restaurante tiene hasta MAX_ADMINS Admin (1 en
-Basico). Cada sede
-adicional (por encima de las incluidas) paga cada mes el 50 % del plan
-(Completo $34.500, Cadena $49.500) y, una sola vez, el montaje de
-COSTO_MONTAJE_SEDE (capacitacion y levantamiento
-de inventario inicial). La base lo refuerza con triggers
+Basico). Cada sede adicional paga cada mes segun su numero (de la 3.a a la
+5.a $45.000, desde la 6.a $35.000; el mismo precio de Turnio) y, una sola
+vez, el montaje de COSTO_MONTAJE_SEDE (capacitacion y levantamiento de
+inventario inicial). La base lo refuerza con triggers
 (migrations/2026-10-07_multisede_reglas.sql).
 
 plan_id NULL (no deberia pasar: el Master siempre elige plan) se trata como
@@ -36,8 +35,8 @@ PLAN_POR_DEFECTO = "basico"
 SEDES_INCLUIDAS = 2
 MAX_ADMINS = 2
 COSTO_MONTAJE_SEDE = 79000
-# Mensualidad de cada sede extra como fraccion del precio del plan.
-FRACCION_SEDE_EXTRA = 0.5
+# Mensualidad de cada sede adicional segun su numero: (desde la sede N, precio).
+TRAMOS_SEDE = ((3, 45000), (6, 35000))
 
 PLANES: dict[str, dict] = {
     "basico": {
@@ -65,7 +64,6 @@ for _plan in PLANES.values():
     _plan["max_sedes"] = None if _multisede else 1
     _plan["max_admins"] = MAX_ADMINS if _multisede else 1
     # Pesos enteros: 69.000 -> 34.500, 99.000 -> 49.500.
-    _plan["sede_extra"] = round(_plan["precio"] * FRACCION_SEDE_EXTRA) if _multisede else None
 PLANES_VALIDOS = tuple(PLANES)
 
 # Para el mensaje de "esta funcion no viene en tu plan".
@@ -109,6 +107,15 @@ def tope_sedes(plan_id: str | None) -> int | None:
     return plan_de(plan_id)["max_sedes"]
 
 
+def precio_sede(numero: int) -> int:
+    """Mensualidad de la sede numero `numero` (1 = principal). Las incluidas: 0."""
+    precio = 0
+    for desde, valor in TRAMOS_SEDE:
+        if numero >= desde:
+            precio = valor
+    return precio
+
+
 def sede_nueva_es_adicional(plan_id: str | None, sedes_activas: int) -> bool:
     """La proxima sede ya pasa de las incluidas: paga mensualidad y montaje."""
     return int(sedes_activas) >= SEDES_INCLUIDAS
@@ -130,19 +137,20 @@ def sedes_extra(plan_id: str | None, sedes_activas: int) -> int:
 
 
 def mensualidad(plan_id: str | None, sedes_activas: int) -> int:
-    """Lo que paga el restaurante al mes: plan + 50 % del plan por sede
-    adicional. Completo con 3 sedes: 69.000 + 34.500 = 103.500."""
+    """Lo que paga el restaurante al mes: plan + cada sede adicional segun su
+    tramo. Completo con 3 sedes: 69.000 + 45.000 = 114.000."""
     plan = plan_de(plan_id)
-    return plan["precio"] + sedes_extra(plan_id, sedes_activas) * (plan["sede_extra"] or 0)
+    if "multisede" not in plan["funciones"]:
+        return plan["precio"]
+    return plan["precio"] + sum(precio_sede(n) for n in range(1, int(sedes_activas) + 1))
 
 
 def _mensaje(recurso: str, plan_id: str, tope: int) -> str:
     nombre = plan_de(plan_id)["nombre"]
     if recurso == "sedes":
-        completo = PLANES["completo"]
         return (
             f"Tu Plan {nombre} es para una sola sede. El Plan Completo trae {SEDES_INCLUIDAS} "
-            f"sedes y puedes abrir más (cada sede adicional suma ${completo['sede_extra']:,} al mes "
+            f"sedes y puedes abrir más (cada sede adicional desde ${TRAMOS_SEDE[-1][1]:,} al mes "
             f"y un montaje único de ${COSTO_MONTAJE_SEDE:,}).".replace(",", ".")
         )
     if recurso == "admins":

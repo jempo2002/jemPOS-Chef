@@ -9,13 +9,11 @@ def test_precios_del_landing():
     assert ps.COSTO_MONTAJE_SEDE == 79000
 
 
-def test_sede_extra_cuesta_la_mitad_del_plan():
-    assert ps.PLANES["completo"]["sede_extra"] == 34500
-    assert ps.PLANES["cadena"]["sede_extra"] == 49500
-    assert ps.PLANES["basico"]["sede_extra"] is None
+def test_sede_adicional_por_tramos():
+    assert [ps.precio_sede(n) for n in range(1, 8)] == [0, 0, 45000, 45000, 45000, 35000, 35000]
     assert ps.mensualidad("completo", 2) == 69000  # 2 sedes incluidas
-    assert ps.mensualidad("completo", 3) == 69000 + 34500
-    assert ps.mensualidad("cadena", 5) == 99000 + 3 * 49500
+    assert ps.mensualidad("completo", 3) == 69000 + 45000
+    assert ps.mensualidad("cadena", 6) == 99000 + 3 * 45000 + 35000
     assert ps.mensualidad("basico", 1) == 49000
 
 

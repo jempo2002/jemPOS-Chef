@@ -52,7 +52,8 @@ def resumen_sedes(id_tienda: int) -> dict:
         "sedes": sedes,
         "plan_id": plan_id,
         "plan_nombre": plan["nombre"],
-        "sede_extra": plan["sede_extra"],
+        # Mensualidad que sumaria la proxima sede (0 si va incluida).
+        "sede_extra": plan_service.precio_sede(n + 1),
         "max_sedes": tope,
         "puede_crear": tope is None or n < tope,
         "sedes_incluidas": plan_service.SEDES_INCLUIDAS,

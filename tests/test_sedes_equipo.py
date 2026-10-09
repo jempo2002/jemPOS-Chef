@@ -27,7 +27,7 @@ def test_completo_trae_dos_sedes_y_las_adicionales_pagan(client, crear):
         assert client.post("/api/sedes", json={"nombre": nombre}).status_code == 201
     assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 409
     pagina = client.get("/sedes").get_data(as_text=True)
-    assert "$138.000" in pagina  # 69.000 + 2 x 34.500
+    assert "$159.000" in pagina  # 69.000 + 2 x 45.000
     fila = crear.fila(
         "SELECT SUM(costo_montaje) AS total, SUM(montaje_pagado) AS pagadas FROM sedes WHERE id_tienda = %s",
         (id_tienda,),
