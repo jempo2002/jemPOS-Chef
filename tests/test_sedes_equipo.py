@@ -18,35 +18,33 @@ def test_basico_no_abre_segunda_sede(client, crear):
     assert r.get_json()["code"] == "limite_plan"
 
 
-def test_completo_abre_hasta_cuatro_sedes_con_montaje(client, crear):
+def test_completo_abre_hasta_dos_sedes_con_montaje(client, crear):
     id_tienda, _ = _admin(client, crear, "completo")
-    for nombre in ("Norte", "Sur", "Oriente"):
-        assert client.post("/api/sedes", json={"nombre": nombre}).status_code == 201
-    r = client.post("/api/sedes", json={"nombre": "Quinta"})
+    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 201
+    r = client.post("/api/sedes", json={"nombre": "Tercera"})
     assert r.status_code == 403 and "corporativo" in r.get_json()["msg"]
     assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code in (403, 409)
     pagina = client.get("/sedes").get_data(as_text=True)
-    assert "$172.500" in pagina  # 69.000 + 3 x 34.500
+    assert "$103.500" in pagina  # 69.000 + 34.500
     fila = crear.fila(
         "SELECT SUM(costo_montaje) AS total, SUM(montaje_pagado) AS pagadas FROM sedes WHERE id_tienda = %s",
         (id_tienda,),
     )
-    assert int(fila["total"]) == 3 * 79000 and int(fila["pagadas"]) == 0
+    assert int(fila["total"]) == 79000 and int(fila["pagadas"]) == 0
 
 
 def test_nombre_de_sede_repetido(client, crear):
-    _admin(client, crear, "cadena")
-    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 201
-    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 409
+    _admin(client, crear, "cadena")  # su sede se llama "Principal"
+    assert client.post("/api/sedes", json={"nombre": "Principal"}).status_code == 409
 
 
-def test_la_base_rechaza_una_quinta_sede_y_basico_con_varias(crear, db):
+def test_la_base_rechaza_una_tercera_sede_y_basico_con_varias(crear, db):
     import mysql.connector
     import pytest
 
-    id_tienda, _ = crear.tienda("cadena", sedes=("A", "B", "C", "D"))
+    id_tienda, _ = crear.tienda("cadena", sedes=("A", "B"))
     with pytest.raises(mysql.connector.Error) as exc:
-        crear.sede(id_tienda, "E")
+        crear.sede(id_tienda, "C")
     assert exc.value.errno == 1644
     with pytest.raises(mysql.connector.Error):
         db.cursor().execute("UPDATE tiendas SET plan_id = 'basico' WHERE id_tienda = %s", (id_tienda,))
@@ -91,6 +89,25 @@ def test_tope_de_usuarios_del_basico(client, crear):
         assert client.post("/api/usuarios", json=_nuevo(n)).status_code == 201
     r = client.post("/api/usuarios", json=_nuevo(99))
     assert r.status_code == 403 and r.get_json()["recurso"] == "usuarios"
+
+
+def test_hasta_dos_admin_para_todas_las_sedes(client, crear):
+    id_tienda, (centro, norte) = _admin(client, crear, "completo", ("Centro", "Norte"))
+    assert client.post("/api/usuarios", json=_nuevo(1, "Admin")).status_code == 201
+    fila = crear.fila("SELECT id_sede FROM usuarios WHERE correo = 'p1@chef.co'")
+    assert fila["id_sede"] is None  # maneja las dos sedes
+    r = client.post("/api/usuarios", json=_nuevo(2, "Admin"))
+    assert r.status_code == 403 and r.get_json()["recurso"] == "admins"
+    assert client.post("/api/usuarios", json=_nuevo(3, id_sede=norte)).status_code == 201
+    id_mesero = crear.fila("SELECT id_usuario FROM usuarios WHERE correo = 'p3@chef.co'")["id_usuario"]
+    r = client.put(f"/api/usuarios/{id_mesero}", json={"nombre": "Persona 3", "rol": "Admin"})
+    assert r.status_code == 403 and r.get_json()["recurso"] == "admins"
+
+
+def test_basico_tiene_un_admin(client, crear):
+    _admin(client, crear, "basico")
+    r = client.post("/api/usuarios", json=_nuevo(1, "Admin"))
+    assert r.status_code == 403 and r.get_json()["recurso"] == "admins"
 
 
 def test_usuario_sin_sede_en_restaurante_de_varias_sedes(client, crear):

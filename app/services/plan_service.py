@@ -7,8 +7,10 @@ landing (index.html, seccion #planes), en COP por mes:
   Completo $69.000  + pantalla de cocina, cuenta dividida, recetas, multisede
   Cadena   $99.000  + factura electronica, multisede
 
-Multisede (reglas de jempo, 2026-10-07): solo Completo y Cadena, hasta
-MAX_SEDES sedes activas (mas sedes = un futuro Plan Corporativo). Cada sede
+Multisede (reglas de jempo, 2026-10-07; tope bajado a 2 el 2026-10-09, igual
+en todos sus productos): solo Completo y Cadena, hasta MAX_SEDES sedes
+activas (mas sedes = un futuro Plan Corporativo). El mismo Admin maneja todas
+las sedes y el restaurante tiene hasta MAX_ADMINS Admin (1 en Basico). Cada sede
 extra paga cada mes el 50 % del plan (Completo $34.500, Cadena $49.500) y,
 una sola vez, el montaje de COSTO_MONTAJE_SEDE (capacitacion y levantamiento
 de inventario inicial). La base lo refuerza con triggers
@@ -29,7 +31,8 @@ WHATSAPP = "https://wa.me/573106152268"
 
 PLAN_POR_DEFECTO = "basico"
 
-MAX_SEDES = 4
+MAX_SEDES = 2
+MAX_ADMINS = 2
 COSTO_MONTAJE_SEDE = 79000
 # Mensualidad de cada sede extra como fraccion del precio del plan.
 FRACCION_SEDE_EXTRA = 0.5
@@ -57,6 +60,7 @@ PLANES: dict[str, dict] = {
 for _plan in PLANES.values():
     _multisede = "multisede" in _plan["funciones"]
     _plan["max_sedes"] = MAX_SEDES if _multisede else 1
+    _plan["max_admins"] = MAX_ADMINS if _multisede else 1
     # Pesos enteros: 69.000 -> 34.500, 99.000 -> 49.500.
     _plan["sede_extra"] = round(_plan["precio"] * FRACCION_SEDE_EXTRA) if _multisede else None
 PLANES_VALIDOS = tuple(PLANES)
@@ -76,7 +80,7 @@ _SIGUIENTE = {
         "Pantalla de cocina",
         "Cuenta dividida",
         "Recetas e inventario de ingredientes",
-        f"Hasta {MAX_SEDES} sedes",
+        f"Hasta {MAX_SEDES} sedes y {MAX_ADMINS} administradores",
     )),
     "completo": ("cadena", (
         "Factura electrónica DIAN",
@@ -99,6 +103,11 @@ def tiene_funcion(plan_id: str | None, funcion: str) -> bool:
 def tope_sedes(plan_id: str | None) -> int:
     """Maximo de sedes activas: 1 en Basico, MAX_SEDES con multisede."""
     return plan_de(plan_id)["max_sedes"]
+
+
+def tope_admins(plan_id: str | None) -> int:
+    """Admin activos del restaurante (manejan todas sus sedes)."""
+    return plan_de(plan_id)["max_admins"]
 
 
 def tope_usuarios(plan_id: str | None, sedes_activas: int) -> int:
@@ -132,6 +141,16 @@ def _mensaje(recurso: str, plan_id: str, tope: int) -> str:
             f"hasta {MAX_SEDES} (cada sede extra suma ${completo['sede_extra']:,} al mes "
             f"y un montaje único de ${COSTO_MONTAJE_SEDE:,}).".replace(",", ".")
         )
+    if recurso == "admins":
+        if tope >= MAX_ADMINS:
+            return (
+                f"Tu Plan {nombre} permite {MAX_ADMINS} administradores, y cada uno maneja "
+                "todas las sedes. Es el máximo: escríbenos si necesitas más."
+            )
+        return (
+            f"Tu Plan {nombre} permite 1 administrador. Con el Plan Completo puedes tener "
+            f"{MAX_ADMINS}, y cada uno maneja todas las sedes."
+        )
     base = f"Tu Plan {nombre} permite {tope} usuarios activos."
     siguiente = _SIGUIENTE.get(plan_id)
     if plan_id == "cadena":
@@ -151,8 +170,8 @@ class LimitePlanError(Exception):
         """Cuerpo JSON + 403. `code` le dice al front que muestre el aviso de
         cambio de plan en vez del error normal."""
         actual = plan_de(self.plan_id)["nombre"]
-        if self.recurso == "sedes":
-            # Basico -> Completo; con multisede ya esta en el tope de sedes.
+        if self.recurso in ("sedes", "admins"):
+            # Basico -> Completo; con multisede ya esta en el tope.
             destino = None if "multisede" in plan_de(self.plan_id)["funciones"] else "completo"
         else:
             destino = (_SIGUIENTE.get(self.plan_id) or (None,))[0]
@@ -160,7 +179,7 @@ class LimitePlanError(Exception):
             texto = f"Hola, tengo el Plan {actual} de jemPOS Chef y quiero pasarme al Plan {PLANES[destino]['nombre']}."
             cta = f"Pasarme al Plan {PLANES[destino]['nombre']}"
         else:
-            falta = "más sedes" if self.recurso == "sedes" else "más usuarios"
+            falta = {"sedes": "más sedes", "admins": "más administradores"}.get(self.recurso, "más usuarios")
             texto = f"Hola, tengo el Plan {actual} de jemPOS Chef y necesito {falta}."
             cta = "Escribirnos por WhatsApp"
         return {
@@ -192,9 +211,17 @@ def _contar_usuarios(cur, id_tienda: int) -> int:
     return int(cur.fetchone()["n"])
 
 
+def _contar_admins(cur, id_tienda: int) -> int:
+    cur.execute(
+        "SELECT COUNT(*) AS n FROM usuarios WHERE id_tienda = %s AND estado_activo = 1 AND rol = 'Admin'",
+        (id_tienda,),
+    )
+    return int(cur.fetchone()["n"])
+
+
 def verificar_limite(cur, id_tienda: int, recurso: str) -> None:
-    """Lanza LimitePlanError si agregar uno mas de `recurso` ('sedes' o
-    'usuarios') pasa el tope del plan.
+    """Lanza LimitePlanError si agregar uno mas de `recurso` ('sedes',
+    'usuarios' o 'admins') pasa el tope del plan.
 
     `cur` debe ser un cursor dictionary=True dentro de la transaccion del alta.
     El FOR UPDATE bloquea la fila de la tienda hasta el commit del llamador:
@@ -211,6 +238,11 @@ def verificar_limite(cur, id_tienda: int, recurso: str) -> None:
         tope = tope_usuarios(plan_id, sedes)
         if _contar_usuarios(cur, id_tienda) >= tope:
             raise LimitePlanError("usuarios", plan_id, tope)
+        return
+    if recurso == "admins":
+        tope = tope_admins(plan_id)
+        if _contar_admins(cur, id_tienda) >= tope:
+            raise LimitePlanError("admins", plan_id, tope)
         return
     raise ValueError(f"Recurso desconocido: {recurso}")
 
@@ -239,6 +271,13 @@ def verificar_cambio_plan(cur, id_tienda: int, plan_nuevo: str) -> None:
         raise ValueError(
             f"El restaurante tiene {usuarios} usuarios activos y el Plan {nombre} permite {tope_u}. "
             "Desactiva usuarios antes de cambiar de plan."
+        )
+    admins = _contar_admins(cur, id_tienda)
+    tope_a = tope_admins(plan_nuevo)
+    if admins > tope_a:
+        raise ValueError(
+            f"El restaurante tiene {admins} administradores y el Plan {nombre} permite {tope_a}. "
+            "Cambia el rol de los que sobran antes de cambiar de plan."
         )
 
 

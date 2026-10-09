@@ -105,6 +105,8 @@ def crear_usuario(id_tienda: int, data: dict) -> int:
             raise UsuarioError("Ya existe un usuario con ese correo o cedula.", 409)
         id_sede = _parse_sede(cur, id_tienda, rol, data.get("id_sede"))
         plan_service.verificar_limite(cur, id_tienda, "usuarios")
+        if rol == "Admin":
+            plan_service.verificar_limite(cur, id_tienda, "admins")
         cur.execute(
             "INSERT INTO usuarios (id_tienda, id_sede, nombre_completo, correo, clave_hash, rol, cc) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
@@ -157,6 +159,8 @@ def actualizar_usuario(id_tienda: int, id_actor: int, id_usuario: int, data: dic
                 raise UsuarioError("No puedes quitarte el rol de Admin a ti mismo.")
             if _es_ultimo_admin(cur, id_tienda, id_usuario):
                 raise UsuarioError("El restaurante debe tener al menos un Admin.")
+        if rol == "Admin" and usuario["rol"] != "Admin":
+            plan_service.verificar_limite(cur, id_tienda, "admins")
         id_sede = _parse_sede(cur, id_tienda, rol, data.get("id_sede"))
         cur.execute(
             "UPDATE usuarios SET nombre_completo = %s, rol = %s, id_sede = %s WHERE id_usuario = %s",
