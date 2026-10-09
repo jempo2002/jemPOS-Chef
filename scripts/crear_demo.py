@@ -12,8 +12,9 @@ por rol:
     cajero@demo.chef   Cajero  (abre caja y cobra)
 
 Todos con la misma contrasena, que se pide por consola (o DEMO_CLAVE).
-Usa la base del .env. Si el restaurante "Demo Chef" ya existe, solo le agrega
-los insumos y recetas si aun no tiene.
+Usa la base del .env. Se puede correr varias veces: si el restaurante "Demo
+Chef" ya existe, crea los usuarios que falten, les pone a los cuatro la
+contrasena dada (y los reactiva) y agrega insumos y recetas si aun no tiene.
 
     python scripts/crear_demo.py
 """
@@ -25,6 +26,8 @@ import sys
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
+
+from werkzeug.security import generate_password_hash  # noqa: E402
 
 from app import create_app  # noqa: E402
 from app.services import (  # noqa: E402
@@ -105,6 +108,8 @@ def main() -> int:
             conn.close()
         if existente:
             id_tienda, id_sede, id_admin = _ids(NOMBRE)
+            asegurar_usuarios(id_tienda, id_sede, clave)
+            print("Usuarios listos con la contrasena dada: " + ", ".join(_correos()))
             if sembrar_domiciliarios(id_tienda, id_sede):
                 print(f'"{NOMBRE}": le agregué los domiciliarios {", ".join(DOMICILIARIOS)}.')
             if sembrar_recetas(id_tienda, id_sede, id_admin):
@@ -146,8 +151,42 @@ def main() -> int:
         sembrar_domiciliarios(id_tienda, id_sede)
 
     print(f'Listo: "{NOMBRE}" con {sum(map(len, ZONAS.values()))} mesas, {len(CARTA)} productos y {len(RECETAS)} recetas.')
-    print("Usuarios: " + ", ".join(f"{p}@{DOMINIO}" for p in ["admin"] + [u[1] for u in USUARIOS]))
+    print("Usuarios: " + ", ".join(_correos()))
     return 0
+
+
+def _correos() -> list[str]:
+    return [f"{p}@{DOMINIO}" for p in ["admin"] + [u[1] for u in USUARIOS]]
+
+
+def asegurar_usuarios(id_tienda: int, id_sede: int, clave: str) -> None:
+    """Crea los usuarios por rol que falten y deja a los cuatro activos y con
+    la contrasena dada, hasheada igual que la app."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT correo FROM usuarios WHERE id_tienda = %s AND estado_activo = 1", (id_tienda,))
+        existentes = {fila[0] for fila in cur.fetchall()}
+    finally:
+        conn.close()
+    for nombre, prefijo, rol, cc in USUARIOS:
+        if f"{prefijo}@{DOMINIO}" not in existentes:
+            usuario_service.crear_usuario(id_tienda, {
+                "nombre": nombre, "cc": cc, "rol": rol, "id_sede": id_sede,
+                "correo": f"{prefijo}@{DOMINIO}", "password": clave, "confirm_password": clave,
+            })
+    correos = _correos()
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE usuarios SET clave_hash = %s, estado_activo = 1 "
+            f"WHERE id_tienda = %s AND correo IN ({', '.join(['%s'] * len(correos))})",
+            (generate_password_hash(clave), id_tienda, *correos),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 DOMICILIARIOS = ("Pedro", "Luisa")
