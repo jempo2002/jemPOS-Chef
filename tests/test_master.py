@@ -46,12 +46,14 @@ def test_bajar_a_basico_con_varias_sedes_se_bloquea(client, crear):
 def test_montaje_pendiente_y_cobrado(client, crear):
     _master(client, crear)
     id_tienda, _ = crear.tienda("completo")
+    # Norte va incluida; Sur es la adicional (montaje y media mensualidad).
+    crear.fila("INSERT INTO sedes (id_tienda, nombre, costo_montaje) VALUES (%s, 'Norte', 0)", (id_tienda,))
     crear.fila(
-        "INSERT INTO sedes (id_tienda, nombre, costo_montaje) VALUES (%s, 'Norte', 79000)", (id_tienda,)
+        "INSERT INTO sedes (id_tienda, nombre, costo_montaje) VALUES (%s, 'Sur', 79000)", (id_tienda,)
     )
     pagina = client.get("/panel-master").get_data(as_text=True)
     assert "Montaje pendiente $79.000" in pagina
-    assert "$103.500" in pagina  # 69.000 + 34.500
+    assert "$114.000" in pagina  # 69.000 + 45.000
     r = client.post(f"/api/master/restaurantes/{id_tienda}/montaje")
     assert r.status_code == 200 and "$79.000" in r.get_json()["msg"]
     assert client.post(f"/api/master/restaurantes/{id_tienda}/montaje").status_code == 404

@@ -5,7 +5,7 @@
 <p class="muted">
   Plan {{ plan_nombre }} · {{ sedes|length }} sede{{ '' if sedes|length == 1 else 's' }} activa{{ '' if sedes|length == 1 else 's' }}
   · Mensualidad {{ mensualidad|pesos }}
-  {% if sedes_extra %}(incluye {{ sedes_extra }} sede{{ '' if sedes_extra == 1 else 's' }} extra){% endif %}
+  {% if sedes_extra %}(incluye {{ sedes_extra }} sede{{ '' if sedes_extra == 1 else 's' }} adicional{{ '' if sedes_extra == 1 else 'es' }}){% endif %}
 </p>
 
 <section class="tarjeta">
@@ -43,17 +43,17 @@
 <section class="tarjeta">
   <h2>Nueva sede</h2>
   {% if not multisede %}
-    <p class="muted">Tu Plan {{ plan_nombre }} es para una sola sede. Con el Plan Completo o Cadena puedes tener hasta 4.</p>
-  {% elif puede_crear %}
-    <p class="muted">
-      Cada sede nueva tiene un montaje único de {{ costo_montaje|pesos }} (capacitación y levantamiento del inventario inicial)
-      y suma {{ sede_extra|pesos }} a la mensualidad. Puedes tener hasta {{ max_sedes }} sedes.
-    </p>
+    <p class="muted">Tu Plan {{ plan_nombre }} es para una sola sede. El Plan Completo o Cadena trae {{ sedes_incluidas }} y puedes abrir más.</p>
+  {% elif not nueva_adicional %}
+    <p class="muted">Tu plan incluye {{ sedes_incluidas }} sedes: esta no suma nada a la mensualidad.</p>
   {% else %}
-    <p class="muted">Llegaste al máximo de {{ max_sedes }} sedes. Para más, escríbenos y lo vemos con un plan corporativo.</p>
+    <p class="muted">
+      Tu plan incluye {{ sedes_incluidas }} sedes. Cada sede adicional tiene un montaje único de {{ costo_montaje|pesos }}
+      (capacitación y levantamiento del inventario inicial) y suma {{ sede_extra|pesos }} a la mensualidad.
+    </p>
   {% endif %}
   <form class="form form--fila" data-api="POST {{ url_for('restaurante.api_sedes_crear') }}"
-        data-confirmar="La sede nueva suma {{ (sede_extra or 0)|pesos }} al mes y un montaje único de {{ costo_montaje|pesos }}. ¿Crearla?">
+        {% if nueva_adicional %}data-confirmar="La sede nueva es adicional: suma {{ (sede_extra or 0)|pesos }} al mes y un montaje único de {{ costo_montaje|pesos }}. ¿Crearla?"{% endif %}>
     <input name="nombre" placeholder="Nombre (ej. Centro)" maxlength="120" required aria-label="Nombre" />
     <input name="direccion" placeholder="Dirección" maxlength="200" aria-label="Dirección" />
     <input name="telefono" placeholder="Teléfono" maxlength="20" inputmode="tel" aria-label="Teléfono" />

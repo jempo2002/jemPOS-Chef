@@ -52,9 +52,12 @@ def resumen_sedes(id_tienda: int) -> dict:
         "sedes": sedes,
         "plan_id": plan_id,
         "plan_nombre": plan["nombre"],
-        "sede_extra": plan["sede_extra"],
+        # Mensualidad que sumaria la proxima sede (0 si va incluida).
+        "sede_extra": plan_service.precio_sede(n + 1),
         "max_sedes": tope,
-        "puede_crear": n < tope,
+        "puede_crear": tope is None or n < tope,
+        "sedes_incluidas": plan_service.SEDES_INCLUIDAS,
+        "nueva_adicional": plan_service.sede_nueva_es_adicional(plan_id, n),
         "multisede": plan_service.tiene_funcion(plan_id, "multisede"),
         "costo_montaje": plan_service.COSTO_MONTAJE_SEDE,
         "sedes_extra": plan_service.sedes_extra(plan_id, n),
@@ -65,17 +68,22 @@ def resumen_sedes(id_tienda: int) -> dict:
 def crear_sede(id_tienda: int, data: dict) -> int:
     """Lanza ValueError (datos), LimitePlanError (tope) o SedeError.
 
-    La sede nace con su montaje pendiente (COSTO_MONTAJE_SEDE): el Master lo
-    marca pagado en su panel cuando lo recibe."""
+    Una sede adicional (por encima de las incluidas) nace con su montaje
+    pendiente (COSTO_MONTAJE_SEDE): el Master lo marca pagado en su panel
+    cuando lo recibe. Las incluidas no pagan montaje."""
     nombre, direccion, telefono = _campos(data)
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
         plan_service.verificar_limite(cur, id_tienda, "sedes")
         cur.execute(
+            "SELECT COUNT(*) AS n FROM sedes WHERE id_tienda = %s AND estado = 'Activa'", (id_tienda,)
+        )
+        adicional = plan_service.sede_nueva_es_adicional(None, cur.fetchone()["n"])
+        cur.execute(
             "INSERT INTO sedes (id_tienda, nombre, direccion, telefono, costo_montaje) "
             "VALUES (%s, %s, %s, %s, %s)",
-            (id_tienda, nombre, direccion, telefono, plan_service.COSTO_MONTAJE_SEDE),
+            (id_tienda, nombre, direccion, telefono, plan_service.COSTO_MONTAJE_SEDE if adicional else 0),
         )
         id_sede = cur.lastrowid
         conn.commit()
