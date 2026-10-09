@@ -18,19 +18,21 @@ def test_basico_no_abre_segunda_sede(client, crear):
     assert r.get_json()["code"] == "limite_plan"
 
 
-def test_completo_abre_hasta_dos_sedes_con_montaje(client, crear):
+def test_completo_trae_dos_sedes_y_las_adicionales_pagan(client, crear):
     id_tienda, _ = _admin(client, crear, "completo")
-    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 201
-    r = client.post("/api/sedes", json={"nombre": "Tercera"})
-    assert r.status_code == 403 and "corporativo" in r.get_json()["msg"]
-    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code in (403, 409)
+    assert "no suma nada" in client.get("/sedes").get_data(as_text=True)
+    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 201  # incluida
+    assert "$69.000" in client.get("/sedes").get_data(as_text=True)
+    for nombre in ("Sur", "Oriente"):  # adicionales, sin tope
+        assert client.post("/api/sedes", json={"nombre": nombre}).status_code == 201
+    assert client.post("/api/sedes", json={"nombre": "Norte"}).status_code == 409
     pagina = client.get("/sedes").get_data(as_text=True)
-    assert "$103.500" in pagina  # 69.000 + 34.500
+    assert "$138.000" in pagina  # 69.000 + 2 x 34.500
     fila = crear.fila(
         "SELECT SUM(costo_montaje) AS total, SUM(montaje_pagado) AS pagadas FROM sedes WHERE id_tienda = %s",
         (id_tienda,),
     )
-    assert int(fila["total"]) == 79000 and int(fila["pagadas"]) == 0
+    assert int(fila["total"]) == 2 * 79000 and int(fila["pagadas"]) == 0  # la incluida no paga montaje
 
 
 def test_nombre_de_sede_repetido(client, crear):
@@ -38,14 +40,12 @@ def test_nombre_de_sede_repetido(client, crear):
     assert client.post("/api/sedes", json={"nombre": "Principal"}).status_code == 409
 
 
-def test_la_base_rechaza_una_tercera_sede_y_basico_con_varias(crear, db):
+def test_la_base_deja_varias_sedes_en_cadena_y_rechaza_basico_con_varias(crear, db):
     import mysql.connector
     import pytest
 
-    id_tienda, _ = crear.tienda("cadena", sedes=("A", "B"))
-    with pytest.raises(mysql.connector.Error) as exc:
-        crear.sede(id_tienda, "C")
-    assert exc.value.errno == 1644
+    id_tienda, _ = crear.tienda("cadena", sedes=("A", "B", "C", "D"))
+    crear.sede(id_tienda, "E")
     with pytest.raises(mysql.connector.Error):
         db.cursor().execute("UPDATE tiendas SET plan_id = 'basico' WHERE id_tienda = %s", (id_tienda,))
     basico, _ = crear.tienda("basico", nombre="Uno")

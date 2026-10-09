@@ -12,7 +12,7 @@ Base extraída de jemPOS (que no se modifica): login, recuperación de contrase�
 
 - **Sedes**: cada restaurante tiene al menos una. Cajero, Mesero y Cocina están atados a la suya; el Admin elige sede al entrar si hay varias. Borrado lógico (`estado = 'Eliminada'`).
 - **Planes** (`app/services/plan_service.py`): Básico $49.000, Completo $69.000, Cadena $99.000. Recetas, cocina, cuenta dividida y multisede desde Completo (`requiere_funcion("recetas")`); factura electrónica solo en Cadena.
-- **Multisede**: hasta 2 sedes en Completo y Cadena, 1 en Básico; el mismo Admin maneja todas y hay hasta 2 Admin (1 en Básico). Cada sede extra paga el 50 % del plan al mes y un montaje único de $79.000, que el Master marca cobrado. Triggers en la base rechazan una sede de más o bajar a Básico con varias sedes.
+- **Multisede**: 2 sedes incluidas en Completo y Cadena y se pueden abrir más; 1 en Básico. El mismo Admin maneja todas y hay hasta 2 Admin (1 en Básico). Cada sede adicional paga el 50 % del plan al mes y un montaje único de $79.000, que el Master marca cobrado. Triggers en la base rechazan una segunda sede en Básico o bajar a Básico con varias sedes.
 - **Panel Master** (`/panel-master`): crea restaurantes (tienda + sede principal + Admin, con un mes de prueba), cambia el plan, registra pagos y elimina.
 - **Recetas e insumos** (`/recetas`, Completo y Cadena): insumos en gramos, mililitros o unidades con stock por sede, compras en kg/lb/L con costo promedio ponderado, recetas por plato y costo por plato con alerta cuando los ingredientes pasan del 35 % del precio (ajustable por restaurante). Al enviar la comanda a cocina se descuentan los ingredientes, validando el consumo sumado por insumo. Insumos y líneas de receta con borrado suave; el kardex (`movimientos_inventario`) no se edita ni se borra (triggers en la base).
 - **Cuenta dividida** (Completo y Cadena, solo Cajero y Admin): botón "Dividir cuenta" en el pedido. Por productos, cada persona toma unidades de las líneas (2 cervezas se parten 1 y 1) y se cobra como una venta propia con su método y su propina. En partes iguales, el total se reparte en N montos y queda una sola venta con los platos reales; si mezclan efectivo con otro método, la venta queda Mixto. Cada parte queda en `pedido_cuentas`. Todo o nada, en una transacción, y reenviarlo desde la cola sin conexión no cobra dos veces.
@@ -32,7 +32,7 @@ python scripts/run_migration.py migrations/2026-10-07b_recetas_insumos.sql
 python scripts/run_migration.py migrations/2026-10-07c_cuenta_dividida_llevar.sql
 python scripts/run_migration.py migrations/2026-10-07d_domicilios_recaudo.sql
 python scripts/run_migration.py migrations/2026-10-07e_pago_mixto.sql
-python scripts/run_migration.py migrations/2026-10-09_multisede_dos_sedes.sql
+python scripts/run_migration.py migrations/2026-10-09_multisede_sin_tope.sql
 python scripts/crear_master.py "Tu nombre" tu@correo.com
 python run.py                   # http://127.0.0.1:5000
 ```
