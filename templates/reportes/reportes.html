@@ -274,6 +274,123 @@
   {% endif %}
 </section>
 
+{% elif pestana == 'calificaciones' %}
+<section class="tarjeta">
+  <div class="cifras cifras--kpi">
+    <div><small>Comida</small><strong>{% if c.comida is not none %}{{ c.comida|numero(1) }} <span class="estrellas-fijas">★</span>{% else %}—{% endif %}</strong><small class="muted">Promedio de 1 a 5</small></div>
+    <div><small>Atención</small><strong>{% if c.atencion is not none %}{{ c.atencion|numero(1) }} <span class="estrellas-fijas">★</span>{% else %}—{% endif %}</strong><small class="muted">Promedio de 1 a 5</small></div>
+    <div><small>Calificaciones</small><strong>{{ c.n }}</strong>
+      {% if c.tasa is not none %}<small class="muted">{{ c.calificados }} de {{ c.cobrados }} pedidos cobrados ({{ c.tasa|numero(1) }} %)</small>{% endif %}</div>
+    <div><small>Con comentario</small><strong>{{ c.comentarios }}</strong></div>
+  </div>
+  {% if not c.n %}
+  <p class="aviso separado">Todavía no hay calificaciones en este periodo. Al cobrar, Caja muestra un código QR: el cliente lo escanea con su celular y califica de 1 a 5 estrellas la comida y la atención, sin crear cuenta. A los domicilios con teléfono se les puede mandar por WhatsApp.</p>
+  {% endif %}
+  <form class="form--fila separado" data-api="POST {{ url_for('calificaciones.api_ajustes') }}">
+    <label class="casilla"><input type="checkbox" name="pedir_al_cobrar"{{ ' checked' if pedir_al_cobrar }} /> Mostrar el QR para calificar después de cobrar</label>
+    <button class="btn" type="submit">Guardar</button>
+  </form>
+</section>
+
+{% if c.n %}
+<div class="reportes-columnas">
+<section class="tarjeta">
+  <h2>Comida</h2>
+  <ul class="barras">
+    {% for e in c.reparto_comida %}<li><span>{{ e.estrellas }} ★ <small class="muted">({{ e.n }})</small></span>{{ barra(e.pct) }}<strong>{{ e.pct|numero(0) }} %</strong></li>{% endfor %}
+  </ul>
+</section>
+<section class="tarjeta">
+  <h2>Atención</h2>
+  <ul class="barras">
+    {% for e in c.reparto_atencion %}<li><span>{{ e.estrellas }} ★ <small class="muted">({{ e.n }})</small></span>{{ barra(e.pct) }}<strong>{{ e.pct|numero(0) }} %</strong></li>{% endfor %}
+  </ul>
+</section>
+</div>
+
+<section class="tarjeta">
+  <h2>Por mesero</h2>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Mesero</th><th class="num">Calificaciones</th><th class="num">Comida</th><th class="num">Atención</th></tr></thead>
+    <tbody>
+    {% for m in c.meseros %}
+      <tr class="{{ 'fila--alerta' if m.atencion is not none and m.atencion < 3 }}"><td data-th="Mesero"><strong>{{ m.nombre }}</strong></td><td data-th="Calificaciones" class="num">{{ m.n }}</td>
+        <td data-th="Comida" class="num">{{ m.comida|numero(1) }} ★</td><td data-th="Atención" class="num">{{ m.atencion|numero(1) }} ★</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if c.sedes %}
+  <h2 class="separado">Por sede</h2>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Sede</th><th class="num">Calificaciones</th><th class="num">Comida</th><th class="num">Atención</th></tr></thead>
+    <tbody>
+    {% for s in c.sedes %}
+      <tr><td data-th="Sede"><strong>{{ s.nombre }}</strong></td><td data-th="Calificaciones" class="num">{{ s.n }}</td>
+        <td data-th="Comida" class="num">{{ s.comida|numero(1) }} ★</td><td data-th="Atención" class="num">{{ s.atencion|numero(1) }} ★</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="tarjeta">
+  <div class="cabecera">
+    <div>
+      <h2>Lo que dijeron los clientes</h2>
+      <p class="muted">{{ paginacion.total }} calificaci{{ 'ón' if paginacion.total == 1 else 'ones' }}</p>
+    </div>
+    <div class="acciones">
+      <form method="get" action="{{ url_for('reportes.reportes_page') }}" class="form--fila">
+        {% for k, v in filtros_url.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}" />{% endfor %}
+        <input type="hidden" name="pestana" value="calificaciones" />
+        <select name="ver" aria-label="Mostrar" class="enviar-al-cambiar">
+          <option value="">Todas</option>
+          <option value="bajas"{{ ' selected' if ver == 'bajas' }}>Solo las bajas (1 o 2 ★)</option>
+          <option value="comentarios"{{ ' selected' if ver == 'comentarios' }}>Solo con comentario</option>
+        </select>
+        <noscript><button class="btn" type="submit">Filtrar</button></noscript>
+      </form>
+      <a class="btn" href="{{ url_for('reportes.exportar', tipo='calificaciones', **filtros_url) }}">Exportar</a>
+    </div>
+  </div>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Fecha</th><th>Comida</th><th>Atención</th><th>Comentario</th><th></th></tr></thead>
+    <tbody>
+    {% for x in calificaciones %}
+      <tr class="{{ 'fila--anulada' if not x.activa else ('fila--alerta' if x.comida <= 2 or x.atencion <= 2) }}">
+        <td data-th="Fecha">{{ x.fecha }}<br><small class="muted">{{ x.lugar }}{% if x.mesero %} · {{ x.mesero }}{% endif %}{% if sedes|length > 1 %} · {{ x.sede }}{% endif %}</small></td>
+        <td data-th="Comida"><span class="estrellas-fijas" aria-label="{{ x.comida }} de 5">{{ '★' * x.comida }}<span>{{ '★' * (5 - x.comida) }}</span></span></td>
+        <td data-th="Atención"><span class="estrellas-fijas" aria-label="{{ x.atencion }} de 5">{{ '★' * x.atencion }}<span>{{ '★' * (5 - x.atencion) }}</span></span></td>
+        <td data-th="Comentario">{% if x.comentario %}“{{ x.comentario }}”{% else %}<span class="muted">—</span>{% endif %}
+          {% if not x.activa %}<br><span class="chip chip--anulado">Oculta</span> <small class="muted">{{ x.motivo_oculta }}</small>{% endif %}</td>
+        <td class="acciones">
+          {% if x.activa %}
+          <details>
+            <summary>Ocultar</summary>
+            <form class="form form--fila" data-api="POST {{ url_for('calificaciones.api_ocultar', id_calificacion=x.id_calificacion) }}"
+                  data-confirmar="¿Ocultar esta calificación? Deja de contar en los promedios, pero queda en el historial.">
+              <input name="motivo" maxlength="255" required placeholder="Motivo (ej. fue una prueba)" aria-label="Motivo" />
+              <button class="btn btn--peligro" type="submit">Ocultar</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No hay calificaciones en este periodo.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if paginacion.paginas > 1 %}
+  <nav class="paginador" aria-label="Páginas">
+    {% if paginacion.pagina > 1 %}<a class="btn" href="{{ url_for('reportes.reportes_page', pestana='calificaciones', ver=ver, pagina=paginacion.pagina - 1, **filtros_url) }}">Anterior</a>{% endif %}
+    <span class="muted">Página {{ paginacion.pagina }} de {{ paginacion.paginas }}</span>
+    {% if paginacion.pagina < paginacion.paginas %}<a class="btn" href="{{ url_for('reportes.reportes_page', pestana='calificaciones', ver=ver, pagina=paginacion.pagina + 1, **filtros_url) }}">Siguiente</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+
 {% else %}
 <section class="tarjeta">
   <div class="cabecera">

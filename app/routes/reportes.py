@@ -1,8 +1,8 @@
 """Reportes y contabilidad (rol Admin, todos los planes).
 
-/reportes tiene cuatro pestanas: Resumen (estado de resultados), Ventas
-(por producto y por mesero), Gastos (lista, registrar y anular) y Cierres
-de caja. Filtros por URL: periodo, desde/hasta (rango) y sede ('todas' o un
+/reportes tiene cinco pestanas: Resumen (estado de resultados), Ventas
+(por producto y por mesero), Gastos (lista, registrar y anular), Cierres
+de caja y Calificaciones (lo que califican los clientes). Filtros por URL: periodo, desde/hasta (rango) y sede ('todas' o un
 id). Un Admin atado a una sede solo ve esa sede.
 """
 from __future__ import annotations
@@ -12,13 +12,14 @@ import io
 
 from flask import Blueprint, Response, g, jsonify, render_template, request, session
 
-from app.services import gastos_service, reportes_service
+from app.services import calificaciones_service, gastos_service, reportes_service
 from app.services.errores import ErrorServicio
 from app.utils.decorators import login_required, roles_required
 
 reportes = Blueprint("reportes", __name__)
 
-PESTANAS = (("resumen", "Resumen"), ("ventas", "Ventas"), ("gastos", "Gastos"), ("cierres", "Cierres de caja"))
+PESTANAS = (("resumen", "Resumen"), ("ventas", "Ventas"), ("gastos", "Gastos"), ("cierres", "Cierres de caja"),
+            ("calificaciones", "Calificaciones"))
 _ERRORES = (ValueError, ErrorServicio)
 
 
@@ -66,6 +67,13 @@ def reportes_page():
         datos["categoria"] = categoria
         datos["categorias"] = gastos_service.CATEGORIAS
         datos["sedes_activas"] = _sedes_activas(f["sedes"])
+    elif pestana == "calificaciones":
+        filtro = request.args.get("ver") if request.args.get("ver") in ("bajas", "comentarios") else ""
+        datos["c"] = calificaciones_service.resumen(id_tienda, f["ids"], f["periodo"])
+        datos.update(calificaciones_service.lista(id_tienda, f["ids"], f["periodo"], request.args.get("pagina"),
+                                                  filtro_estrellas=filtro))
+        datos["ver"] = filtro
+        datos["pedir_al_cobrar"] = calificaciones_service.pedir_al_cobrar(id_tienda)
     else:
         datos.update(reportes_service.cierres(id_tienda, f["ids"], f["periodo"]))
     # Los enlaces de pestanas y paginas conservan los filtros.
@@ -129,6 +137,12 @@ def exportar(tipo):
                       "" if t["contado"] is None else round(t["contado"]),
                       "" if t["diferencia"] is None else round(t["diferencia"]), t["observaciones"]]
                      for t in datos["turnos"]])
+    if tipo == "calificaciones":
+        datos = calificaciones_service.lista(id_tienda, f["ids"], per, 1, por_pagina=5000)
+        return _csv(f"calificaciones_{sufijo}",
+                    ["Fecha", "Sede", "Pedido", "Mesero", "Comida", "Atencion", "Comentario", "Estado"],
+                    [[x["fecha"], x["sede"], x["lugar"], x["mesero"], x["comida"], x["atencion"], x["comentario"],
+                      "Activa" if x["activa"] else f"Oculta: {x['motivo_oculta']}"] for x in datos["calificaciones"]])
     return "No encontrado", 404
 
 

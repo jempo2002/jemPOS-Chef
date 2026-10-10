@@ -14,7 +14,7 @@ from __future__ import annotations
 from flask import Blueprint, g, redirect, render_template, session, url_for
 
 from app.routes.salon import CAJA, SALON, _ERRORES, _ctx, _error, _json, _ok
-from app.services import domicilios_service, plan_service
+from app.services import calificaciones_service, domicilios_service, plan_service
 from app.services.pedidos_service import llevar
 from app.utils.decorators import login_required, roles_required
 
@@ -45,6 +45,7 @@ def domicilio_page(uuid):
         puede_cobrar=session.get("rol") in CAJA,
         es_admin=session.get("rol") == "Admin",
         dividir=plan_service.tiene_funcion(g.plan_id, "cuenta_dividida"),
+        calificar=calificaciones_service.pedir_al_cobrar(session["id_tienda"]),
     )
 
 

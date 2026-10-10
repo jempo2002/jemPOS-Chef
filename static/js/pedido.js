@@ -27,6 +27,7 @@
   var puedeCobrar = raiz.dataset.cobrar === '1';
   var esAdmin = raiz.dataset.admin === '1';
   var puedeDividir = raiz.dataset.dividir === '1';
+  var pedirCalificacion = raiz.dataset.calificar === '1';
   var API = llevar ? '/api/llevar/' + llevar : '/api/mesas/' + idMesa;
   var COLA = llevar ? 'llevar:' + llevar : idMesa;  // agrupa lo guardado sin conexion
   var CLAVE_CARTA = 'chef_carta_v1';
@@ -512,8 +513,44 @@
     }
     if (!datos.ok) { Chef.mostrar(datos.msg, true); return; }
     Chef.mostrar(datos.msg, false);
+    var idPedido = detalle && detalle.pedido && detalle.pedido.id_pedido;
     window.localStorage.removeItem(CLAVE_PEDIDO);
+    if (pedirCalificacion && idPedido) { mostrarCalificacion(idPedido); return; }
+    salir();
+  }
+
+  function salir() {
     window.setTimeout(function () { window.location.href = esDomicilio() ? '/domicilios' : '/mesas'; }, 900);
+  }
+
+  /* --- calificacion ---------------------------------------------------- *
+   * Despues de cobrar se muestra el QR para que el cliente califique la
+   * comida y la atencion (se apaga en Reportes > Calificaciones). Si no hay
+   * conexion o falla, se sigue como antes. */
+
+  function mostrarCalificacion(idPedido) {
+    Chef.api('POST', '/api/pedidos/' + idPedido + '/calificacion').then(function (datos) {
+      if (!datos.ok) { salir(); return; }
+      $('calif-qr').src = datos.qr;
+      $('calif-url').textContent = datos.url;
+      $('calif-url').href = datos.url;
+      $('calif-whatsapp').hidden = !datos.whatsapp;
+      $('calif-whatsapp').href = datos.whatsapp || '#';
+      $('calif-imprimir').onclick = function () {
+        imprimir(function (zona) {
+          var t = el('section', 'ticket');
+          t.appendChild(el('h2', '', '¿Cómo te fue?'));
+          t.appendChild(el('p', '', 'Escanea y califica la comida y la atención'));
+          var img = el('img', 'qr-ticket');
+          img.src = datos.qr;
+          img.alt = '';
+          t.appendChild(img);
+          t.appendChild(el('p', '', datos.lugar + ' · ¡Gracias!'));
+          zona.appendChild(t);
+        });
+      };
+      $('dlg-calificar').showModal();
+    }, salir);
   }
 
   /* --- cuenta dividida ------------------------------------------------- *
@@ -837,6 +874,7 @@
   alCerrar('dlg-mover', mover);
   alCerrar('dlg-dividir', cobrarDividido);
   alCerrar('dlg-anular', anular);
+  $('dlg-calificar').addEventListener('close', function () { window.location.href = esDomicilio() ? '/domicilios' : '/mesas'; });
   document.addEventListener('chef:sincronizado', cargar);
 
   pintarCarta();

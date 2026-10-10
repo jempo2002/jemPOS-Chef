@@ -1,0 +1,62 @@
+{#- Pagina publica: sin sesion, sin CSRF y sin app.js (no hay nada que llamar). -#}
+{% macro estrellas_de(campo, titulo) -%}
+<fieldset class="calificar__grupo">
+  <legend>{{ titulo }}</legend>
+  <div class="estrellas">
+    {% for e in estrellas %}
+      <input type="radio" id="{{ campo }}-{{ e }}" name="{{ campo }}" value="{{ e }}" required{{ ' checked' if enviado.get(campo) == e|string }} />
+      <label for="{{ campo }}-{{ e }}" title="{{ e }} de 5"><span aria-hidden="true">★</span><span class="sr-only">{{ e }} estrella{{ '' if e == 1 else 's' }}</span></label>
+    {% endfor %}
+  </div>
+</fieldset>
+{%- endmacro %}
+{% macro mostrar(n) -%}<span class="estrellas-fijas" aria-label="{{ n }} de 5">{{ '★' * n }}<span>{{ '★' * (5 - n) }}</span></span>{%- endmacro %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#c2410c" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="referrer" content="no-referrer" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+  <title>{{ ('Califica a ' ~ info.negocio) if info else 'Calificar' }}</title>
+</head>
+<body class="auth">
+  <main class="auth__card calificar">
+    {% if not info %}
+      <p class="marca">jemPOS <span>Chef</span></p>
+      <h1>Enlace no válido</h1>
+      <p class="muted">Revisa que el enlace esté completo o pide uno nuevo en el restaurante.</p>
+    {% else %}
+      <p class="calificar__negocio">{{ info.negocio }}</p>
+      <p class="muted calificar__lugar">{{ info.lugar }}{% if info.sede %} · {{ info.sede }}{% endif %}</p>
+      {% if info.estado == 'hecha' %}
+        <h1>¡Gracias por calificarnos!</h1>
+        <p>Comida {{ mostrar(info.comida) }}</p>
+        <p>Atención {{ mostrar(info.atencion) }}</p>
+        <p class="muted">Tu opinión nos ayuda a mejorar.</p>
+      {% elif info.estado == 'vencida' %}
+        <h1>Este enlace ya venció</h1>
+        <p class="muted">Gracias por visitarnos. Te esperamos pronto.</p>
+      {% else %}
+        <h1>¿Cómo te fue?</h1>
+        <p class="muted">Califica de 1 a 5 estrellas. Solo toma unos segundos.</p>
+        {% if error %}<p class="aviso aviso--error" role="alert">{{ error }}</p>{% endif %}
+        <form method="post" class="form">
+          {{ estrellas_de('comida', 'La comida') }}
+          {{ estrellas_de('atencion', 'La atención') }}
+          <label>¿Algo que quieras contarnos? <small class="muted">(opcional)</small>
+            <textarea name="comentario" rows="3" maxlength="{{ maximo }}" placeholder="Lo que más te gustó o lo que podemos mejorar">{{ enviado.get('comentario', '') }}</textarea>
+          </label>
+          <button class="btn btn--primario" type="submit">Enviar calificación</button>
+        </form>
+      {% endif %}
+    {% endif %}
+    <p class="pie muted"><small>Con tecnología de jemPOS Chef</small></p>
+  </main>
+</body>
+</html>

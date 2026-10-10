@@ -6,7 +6,7 @@
 {% endblock %}
 {% block content %}
 <div id="pedido" data-mesa="{{ id_mesa or '' }}" data-llevar="{{ llevar or '' }}" data-domicilio="{{ 1 if domicilio else 0 }}" data-cobrar="{{ 1 if puede_cobrar else 0 }}"
-     data-admin="{{ 1 if es_admin else 0 }}" data-dividir="{{ 1 if dividir else 0 }}">
+     data-admin="{{ 1 if es_admin else 0 }}" data-dividir="{{ 1 if dividir else 0 }}" data-calificar="{{ 1 if calificar else 0 }}">
   <div class="cabecera">
     <div>
       {% if domicilio %}<a class="volver" id="volver" href="{{ url_for('domicilios.domicilios_page') }}">← Domicilios</a>
@@ -154,6 +154,20 @@
     <div class="form--fila">
       <button class="btn btn--peligro" type="submit" value="ok">Anular</button>
       <button class="btn" type="submit" value="cancelar" formnovalidate>Cancelar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-calificar" class="dialogo">
+  <form method="dialog" class="form qr-calificar">
+    <h2>¿Cómo le fue al cliente?</h2>
+    <p class="muted">Muéstrale este código para que califique la comida y la atención desde su celular.</p>
+    <img id="calif-qr" alt="Código QR para calificar" />
+    <p><small><a id="calif-url" target="_blank" rel="noopener"></a></small></p>
+    <div class="form--fila">
+      <a class="btn" id="calif-whatsapp" target="_blank" rel="noopener" hidden>Enviar por WhatsApp</a>
+      <button class="btn" type="button" id="calif-imprimir">Imprimir QR</button>
+      <button class="btn btn--primario" type="submit" value="ok">Listo</button>
     </div>
   </form>
 </dialog>

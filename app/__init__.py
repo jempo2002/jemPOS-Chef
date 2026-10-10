@@ -94,6 +94,7 @@ def create_app() -> Flask:
     init_pool_from_app(app)
 
     from app.routes.auth import auth
+    from app.routes.calificaciones import calificaciones
     from app.routes.core import core
     from app.routes.domicilios import domicilios
     from app.routes.master import master
@@ -103,6 +104,7 @@ def create_app() -> Flask:
     from app.routes.salon import salon
 
     app.register_blueprint(auth)
+    app.register_blueprint(calificaciones)
     app.register_blueprint(core)
     app.register_blueprint(domicilios)
     app.register_blueprint(master)

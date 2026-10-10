@@ -550,3 +550,34 @@ details[open] { flex-basis: 100%; }
   .barras li .barra-dato { grid-column: 1 / -1; order: 3; }
   .tabla--tarjetas td.num { text-align: left; }
 }
+
+/* Calificacion del servicio: pagina publica del cliente (estrellas sin JS) y
+ * QR despues de cobrar. Las estrellas van de 5 a 1 en el HTML y se pintan al
+ * reves: asi "la marcada y las que siguen" son las de menor valor. */
+.calificar h1 { margin-top: 0.75rem; }
+.calificar__negocio { margin: 0; font-weight: 800; font-size: 1.35rem; color: var(--primario); text-align: center; }
+.calificar__lugar { margin: 0; text-align: center; }
+.calificar__grupo { border: 0; margin: 0; padding: 0; }
+.calificar__grupo legend { font-weight: 700; padding: 0; margin-bottom: 0.25rem; }
+.calificar textarea {
+  font: inherit; font-weight: 400; padding: 0.5rem 0.75rem; border: 1px solid var(--borde);
+  border-radius: var(--radio); resize: vertical; min-height: 5rem;
+}
+.calificar .btn--primario { width: 100%; }
+.estrellas { display: flex; flex-direction: row-reverse; justify-content: flex-end; gap: 0.15rem; }
+.estrellas input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.form .estrellas label {
+  display: block; font-size: 2.4rem; line-height: 1; color: var(--borde); cursor: pointer;
+  min-width: var(--toque); min-height: var(--toque); text-align: center; padding-top: 0.15rem;
+}
+.estrellas input:checked ~ label, .estrellas label:hover, .estrellas label:hover ~ label { color: #f59e0b; }
+.estrellas input:focus-visible + label { outline: 2px solid var(--primario-500); border-radius: var(--radio); }
+.estrellas-fijas { color: #f59e0b; letter-spacing: 0.05em; }
+.estrellas-fijas span { color: var(--borde); }
+.qr-calificar { text-align: center; }
+.qr-calificar img { width: min(15rem, 70vw); height: auto; display: block; margin: 0.5rem auto; image-rendering: pixelated; }
+.qr-calificar .form--fila { justify-content: center; }
+.promedio-grande { font-size: 2rem; font-weight: 800; }
+@media print { .ticket .qr-ticket { width: 40mm; height: 40mm; display: block; margin: 4pt auto; } }
+.casilla { display: flex; align-items: center; gap: 0.5rem; flex: 1 1 14rem; }
+.casilla input { min-height: 0; width: 1.25rem; height: 1.25rem; flex: none; accent-color: var(--primario); }
