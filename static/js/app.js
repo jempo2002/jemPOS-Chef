@@ -71,6 +71,19 @@
     llamar(form.dataset.api, datos, form.querySelector('[type="submit"]'));
   });
 
+  // Menu de la cuenta y "Mas" (templates/_nav.html): un <dialog> modal, que ya
+  // atrapa el foco y cierra con Escape. Tocar fuera de la hoja tambien cierra.
+  var hoja = document.getElementById('menu-app');
+  if (hoja) {
+    document.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-abrir-menu]')) {
+        if (hoja.showModal) hoja.showModal(); else hoja.setAttribute('open', '');
+      } else if (ev.target.closest('[data-cerrar-menu]') || ev.target === hoja) {
+        if (hoja.close) hoja.close(); else hoja.removeAttribute('open');
+      }
+    });
+  }
+
   document.addEventListener('click', function (ev) {
     var boton = ev.target.closest('button[data-api]');
     if (!boton) return;
