@@ -351,7 +351,7 @@ def _refrescar_costos(cur, id_tienda: int, id_insumo: int) -> None:
 
 def _producto(cur, id_tienda: int, id_producto: int, bloquear: bool = False) -> dict:
     cur.execute(
-        "SELECT id_producto, nombre, precio_venta, precio_costo, controla_stock, es_preparado FROM productos "
+        "SELECT id_producto, nombre, precio_venta, precio_costo, controla_stock, es_preparado, es_adicional FROM productos "
         "WHERE id_producto = %s AND id_tienda = %s AND estado_activo = 1" + (" FOR UPDATE" if bloquear else ""),
         (id_producto, id_tienda),
     )
@@ -367,7 +367,7 @@ def _margen_alerta(cur, id_tienda: int) -> Decimal:
     return Decimal(fila["margen_alerta_costo"]) if fila else MARGEN_ALERTA_DEFECTO
 
 
-def _resumen_costo(costo: Decimal, precio: Decimal, margen: Decimal) -> dict:
+def _resumen_costo(costo: Decimal, precio: Decimal, margen: Decimal, es_adicional: bool = False) -> dict:
     pct = (costo * 100 / precio) if precio > 0 else None
     return {
         "costo": float(costo),
@@ -375,7 +375,8 @@ def _resumen_costo(costo: Decimal, precio: Decimal, margen: Decimal) -> dict:
         "utilidad": float(precio - costo),
         "pct_costo": round(float(pct), 1) if pct is not None else None,
         # Sin precio no hay % que calcular, pero un plato con costo y sin precio igual pierde.
-        "alerta": (pct > margen) if pct is not None else costo > 0,
+        # Un adicional gratis (la salsa que va con el plato) no se vende solo: no pierde.
+        "alerta": (pct > margen) if pct is not None else (costo > 0 and not es_adicional),
     }
 
 
@@ -403,7 +404,7 @@ def ver_receta(id_tienda: int, id_sede: int, id_producto: int) -> dict:
         } for l in lineas],
         "disponibles": disponibles,
         "margen_alerta": float(margen),
-        **_resumen_costo(costo, Decimal(producto["precio_venta"]), margen),
+        **_resumen_costo(costo, Decimal(producto["precio_venta"]), margen, bool(producto["es_adicional"])),
     }
 
 
@@ -472,7 +473,8 @@ def guardar_receta(id_tienda: int, id_producto: int, data: dict) -> dict:
         raise
     finally:
         conn.close()
-    return {"ingredientes": len(nuevas), **_resumen_costo(costo, Decimal(producto["precio_venta"]), margen)}
+    return {"ingredientes": len(nuevas), **_resumen_costo(costo, Decimal(producto["precio_venta"]), margen,
+                                                                     bool(producto["es_adicional"]))}
 
 
 def platos(id_tienda: int, id_sede: int) -> list[dict]:
@@ -483,7 +485,7 @@ def platos(id_tienda: int, id_sede: int) -> list[dict]:
         cur = conn.cursor(dictionary=True)
         margen = _margen_alerta(cur, id_tienda)
         cur.execute(
-            "SELECT p.id_producto, p.nombre, p.precio_venta, p.es_preparado, c.nombre AS categoria "
+            "SELECT p.id_producto, p.nombre, p.precio_venta, p.es_preparado, p.es_adicional, c.nombre AS categoria "
             "FROM productos p LEFT JOIN categorias c ON c.id_categoria = p.id_categoria "
             "WHERE p.id_tienda = %s AND p.estado_activo = 1 AND p.controla_stock = 0 "
             "ORDER BY p.es_preparado DESC, c.nombre IS NULL, c.nombre, p.nombre",
@@ -515,10 +517,11 @@ def platos(id_tienda: int, id_sede: int) -> list[dict]:
             "nombre": f["nombre"],
             "categoria": f["categoria"],
             "es_preparado": bool(f["es_preparado"]),
+            "es_adicional": bool(f["es_adicional"]),
             "ingredientes": ingredientes.get(pid, 0),
             "disponibles": disponibles.get(pid),
         }
-        fila.update(_resumen_costo(_pesos(costos.get(pid, 0)), Decimal(f["precio_venta"]), margen))
+        fila.update(_resumen_costo(_pesos(costos.get(pid, 0)), Decimal(f["precio_venta"]), margen, fila["es_adicional"]))
         resultado.append(fila)
     return resultado
 

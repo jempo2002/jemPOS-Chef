@@ -1,0 +1,135 @@
+{#- Navegacion de la app: barra superior (computador) y barra inferior con
+    "Mas" (celular), generadas desde la misma lista para que muestren los
+    mismos enlaces en el mismo orden, como templates/pos/_nav.html de jemPOS.
+
+    roles     quien ve el enlace (replica el roles_required de la ruta).
+    principal en el celular, roles para los que va en la barra inferior; el
+              resto va en la hoja "Mas", agrupado. Maximo 4 por rol, para que
+              cada boton tenga buen tamano para el pulgar.
+    rutas     prefijos de ruta que lo marcan activo (pedido de una mesa, un
+              para llevar, la receta de un plato...). -#}
+{%- set nav_items = [
+  {'endpoint': 'master.panel', 'label': 'Restaurantes', 'icono': 'restaurantes', 'grupo': 'Operación',
+   'roles': ['Master'], 'principal': ['Master'], 'rutas': ['/panel-master']},
+  {'endpoint': 'core.inicio', 'label': 'Inicio', 'icono': 'inicio', 'grupo': 'Operación',
+   'roles': ['Admin', 'Cajero', 'Mesero', 'Cocina'], 'principal': ['Cajero', 'Mesero', 'Cocina'], 'rutas': ['/inicio']},
+  {'endpoint': 'salon.mesas_page', 'label': 'Mesas', 'icono': 'mesas', 'grupo': 'Operación',
+   'roles': ['Admin', 'Cajero', 'Mesero'], 'principal': ['Admin', 'Cajero', 'Mesero'], 'rutas': ['/mesas', '/llevar/']},
+  {'endpoint': 'domicilios.domicilios_page', 'label': 'Domicilios', 'icono': 'domicilios', 'grupo': 'Operación',
+   'roles': ['Admin', 'Cajero', 'Mesero'], 'principal': ['Admin', 'Cajero', 'Mesero'], 'rutas': ['/domicilio']},
+  {'endpoint': 'salon.cocina_page', 'label': 'Cocina', 'icono': 'cocina', 'grupo': 'Operación',
+   'roles': ['Admin', 'Cocina'], 'principal': ['Cocina'], 'rutas': ['/cocina']},
+  {'endpoint': 'salon.caja_page', 'label': 'Caja', 'icono': 'caja', 'grupo': 'Operación',
+   'roles': ['Admin', 'Cajero'], 'principal': ['Admin', 'Cajero'], 'rutas': ['/caja']},
+  {'endpoint': 'reportes.reportes_page', 'label': 'Reportes', 'icono': 'reportes', 'grupo': 'Administración',
+   'roles': ['Admin'], 'principal': ['Admin'], 'rutas': ['/reportes']},
+  {'endpoint': 'salon.carta_page', 'label': 'Carta', 'icono': 'carta', 'grupo': 'Administración',
+   'roles': ['Admin'], 'principal': [], 'rutas': ['/carta']},
+  {'endpoint': 'recetas.recetas_page', 'label': 'Recetas', 'icono': 'recetas', 'grupo': 'Administración',
+   'roles': ['Admin'], 'principal': [], 'rutas': ['/recetas']},
+  {'endpoint': 'restaurante.sedes_page', 'label': 'Sedes', 'icono': 'sedes', 'grupo': 'Administración',
+   'roles': ['Admin'], 'principal': [], 'rutas': ['/sedes']},
+  {'endpoint': 'restaurante.equipo_page', 'label': 'Equipo', 'icono': 'equipo', 'grupo': 'Administración',
+   'roles': ['Admin'], 'principal': [], 'rutas': ['/equipo']},
+] -%}
+{%- set iconos = {
+  'restaurantes': ['M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z', 'M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2', 'M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2', 'M10 6h4M10 10h4M10 14h4M10 18h4'],
+  'inicio': ['M3 10.5 12 3l9 7.5', 'M5 9v12h14V9', 'M10 21v-6h4v6'],
+  'mesas': ['M2 8h20', 'M5 8v12M19 8v12', 'M9 4h6l1 4H8z', 'M5 14h14'],
+  'domicilios': ['M2 17.5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0', 'M15 17.5a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0', 'M5.5 17.5 9 10h6l3.5 7.5', 'M12 17.5 9 10', 'M14 5h3l1.5 5'],
+  'cocina': ['M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 9.18 0A4 4 0 0 1 18 13.87V21H6Z', 'M6 17h12'],
+  'caja': ['M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1', 'M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4'],
+  'reportes': ['M3 3v18h18', 'M8 17v-4M13 17V7M18 17v-7'],
+  'carta': ['M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z', 'M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z'],
+  'recetas': ['M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z', 'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2', 'M12 11h4M12 16h4M8 11h.01M8 16h.01'],
+  'sedes': ['M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z', 'M9 10a3 3 0 1 0 6 0a3 3 0 1 0-6 0'],
+  'equipo': ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M5 7a4 4 0 1 0 8 0a4 4 0 1 0-8 0', 'M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75'],
+  'mas': ['M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v7H3zM14 15h7v7h-7z'],
+  'cambiar': ['m17 2 4 4-4 4', 'M3 11v-1a4 4 0 0 1 4-4h14', 'm7 22-4-4 4-4', 'M21 13v1a4 4 0 0 1-4 4H3'],
+  'salir': ['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4', 'm16 17 5-5-5-5', 'M21 12H9'],
+  'cerrar': ['M18 6 6 18M6 6l12 12'],
+} -%}
+{%- macro icono(nombre) -%}
+<svg class="icono" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{% for d in iconos[nombre] %}<path d="{{ d }}" />{% endfor %}</svg>
+{%- endmacro -%}
+{%- set rol = usuario.rol -%}
+{%- set ns = namespace(visibles=[], principales=[], en_mas=[], activo=None) -%}
+{%- for item in nav_items if rol in item.roles -%}
+  {%- set ns.visibles = ns.visibles + [item] -%}
+  {%- if rol in item.principal -%}{%- set ns.principales = ns.principales + [item] -%}
+  {%- else -%}{%- set ns.en_mas = ns.en_mas + [item] -%}{%- endif -%}
+  {%- for r in item.rutas if request.path.startswith(r) -%}{%- set ns.activo = item.endpoint -%}{%- endfor -%}
+{%- endfor -%}
+{%- set principales = ns.principales -%}
+{%- set en_mas = ns.en_mas -%}
+{%- set mas_activo = en_mas | selectattr('endpoint', 'equalto', ns.activo) | list | length > 0 -%}
+{%- set partes = usuario.nombre.split() -%}
+{%- set iniciales = ((partes[0][0] if partes else '') ~ (partes[1][0] if partes|length > 1 else '')) | upper -%}
+
+<header class="barra">
+  <a class="marca" href="{{ url_for('master.panel' if rol == 'Master' else 'core.inicio') }}">jemPOS <span>Chef</span></a>
+  <nav class="barra__nav" aria-label="Principal">
+    {% for item in ns.visibles %}
+      <a href="{{ url_for(item.endpoint) }}" class="barra__link{% if item.endpoint == ns.activo %} es-activo{% endif %}"
+         {% if item.endpoint == ns.activo %}aria-current="page"{% endif %}>{{ icono(item.icono) }}<span>{{ item.label }}</span></a>
+    {% endfor %}
+  </nav>
+  <div class="barra__usuario">
+    <button class="chip chip--cola" id="cola-estado" type="button" hidden></button>
+    {% if usuario.sede %}
+      {% if rol == 'Admin' %}
+        <a class="chip chip--sede" href="{{ url_for('auth.seleccionar_sede') }}" title="Cambiar de sede">{{ usuario.sede }}</a>
+      {% else %}
+        <span class="chip chip--sede">{{ usuario.sede }}</span>
+      {% endif %}
+    {% endif %}
+    <button class="cuenta-btn" type="button" data-abrir-menu aria-haspopup="dialog" aria-controls="menu-app"
+            aria-label="Tu cuenta: {{ usuario.nombre }}, {{ rol }}">
+      <span class="avatar" aria-hidden="true">{{ iniciales or '?' }}</span>
+      <span class="cuenta-btn__texto"><strong>{{ partes[0] if partes else '' }}</strong><small>{{ rol }}</small></span>
+    </button>
+  </div>
+</header>
+
+<nav class="tabbar" aria-label="Principal (celular)">
+  {% for item in principales %}
+    <a href="{{ url_for(item.endpoint) }}" class="tabbar__btn{% if item.endpoint == ns.activo %} es-activo{% endif %}"
+       {% if item.endpoint == ns.activo %}aria-current="page"{% endif %}>{{ icono(item.icono) }}<span>{{ item.label }}</span></a>
+  {% endfor %}
+  <button type="button" class="tabbar__btn{% if mas_activo %} es-activo{% endif %}" data-abrir-menu
+          aria-haspopup="dialog" aria-controls="menu-app">{{ icono('mas') }}<span>Más</span></button>
+</nav>
+
+<dialog class="hoja" id="menu-app" aria-labelledby="menu-app-titulo">
+  <div class="hoja__cabeza">
+    <span class="avatar avatar--grande" aria-hidden="true">{{ iniciales or '?' }}</span>
+    <div class="hoja__quien">
+      <strong id="menu-app-titulo">{{ usuario.nombre }}</strong>
+      <small>{{ rol }}{% if usuario.sede %} · Sede {{ usuario.sede }}{% endif %}</small>
+    </div>
+    <button type="button" class="hoja__cerrar" data-cerrar-menu aria-label="Cerrar menú">{{ icono('cerrar') }}</button>
+  </div>
+  {% for grupo in ['Operación', 'Administración'] %}{% set items = en_mas | selectattr('grupo', 'equalto', grupo) | list %}{% if items %}
+    <section class="hoja__grupo hoja__grupo--nav">
+      <h2>{{ grupo }}</h2>
+      <div class="hoja__rejilla">
+        {% for item in items %}
+          <a href="{{ url_for(item.endpoint) }}" class="hoja__item{% if item.endpoint == ns.activo %} es-activo{% endif %}"
+             {% if item.endpoint == ns.activo %}aria-current="page"{% endif %}>{{ icono(item.icono) }}<span>{{ item.label }}</span></a>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}{% endfor %}
+  <section class="hoja__grupo">
+    <h2>Cuenta</h2>
+    <div class="hoja__lista">
+      {% if rol == 'Admin' and usuario.sede %}
+        <a class="hoja__fila" href="{{ url_for('auth.seleccionar_sede') }}">{{ icono('cambiar') }}<span>Cambiar de sede</span></a>
+      {% endif %}
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button class="hoja__fila hoja__fila--peligro" type="submit">{{ icono('salir') }}<span>Cerrar sesión</span></button>
+      </form>
+    </div>
+  </section>
+</dialog>

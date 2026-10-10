@@ -31,6 +31,13 @@ Un para llevar vive igual que una mesa (pedidos.tipo = 'llevar', sin mesa).
 Se puede cobrar antes de que la cocina termine; sale de la lista cuando se
 marca entregado al cliente.
 
+Un adicional (una salsa, un extra de queso: productos.es_adicional) se le
+agrega a un plato al tomar el pedido. Es una linea mas (pedido_items con
+id_item_padre = el plato), con su precio de adicional y su propia receta o
+inventario: descuenta al enviar a cocina, sale en la comanda de su plato, se
+cobra y entra en la venta como cualquier linea. Anular el plato anula sus
+adicionales.
+
 Un domicilio es un para llevar con direccion (pedidos.tipo = 'domicilio' y
 su fila en pedido_domicilios): usa las mismas rutas por uuid. Despacharlo y
 recibir la plata del domiciliario esta en domicilios_service. Mientras va en
@@ -53,6 +60,7 @@ from app.utils.validation import parse_bool, parse_float, parse_int, sanitize_op
 from database import get_db
 
 MAX_ITEMS_POR_ENVIO = 100
+MAX_ADICIONALES_POR_PLATO = 10
 MAX_LINEAS_POR_PEDIDO = 400
 CANTIDAD_MAX = 999
 PROPINA_SUGERIDA = Decimal("0.10")
@@ -201,8 +209,8 @@ def _activo(sitio: dict, pedido: dict | None) -> dict:
 
 def _lineas(cur, id_pedido: int) -> list[dict]:
     cur.execute(
-        "SELECT i.id_item, i.id_producto, p.nombre, p.estacion, p.controla_stock, p.es_preparado, p.precio_costo, "
-        "i.cantidad, i.precio_unitario, i.nota, i.estado, i.id_comanda, c.numero AS numero_comanda "
+        "SELECT i.id_item, i.id_producto, i.id_item_padre, p.nombre, p.estacion, p.controla_stock, p.es_preparado, "
+        "p.precio_costo, i.cantidad, i.precio_unitario, i.nota, i.estado, i.id_comanda, c.numero AS numero_comanda "
         "FROM pedido_items i "
         "JOIN productos p ON p.id_producto = i.id_producto "
         "LEFT JOIN comandas c ON c.id_comanda = i.id_comanda "
@@ -226,6 +234,7 @@ def _detalle(cur, sitio: dict, pedido: dict | None) -> dict:
         items.append({
             "id_item": linea["id_item"],
             "id_producto": linea["id_producto"],
+            "id_item_padre": linea["id_item_padre"],
             "nombre": linea["nombre"],
             "cantidad": float(linea["cantidad"]),
             "precio_unitario": float(linea["precio_unitario"]),
@@ -282,8 +291,28 @@ def _items_validos(data: dict) -> list[dict]:
             "cantidad": cantidad,
             "nota": sanitize_optional_text(item.get("nota"), "La nota", max_len=150),
             "uuid": _uuid(item.get("uuid")),
+            "adicionales": _adicionales_validos(item.get("adicionales")),
         })
     return limpios
+
+
+def _adicionales_validos(adicionales) -> list[dict]:
+    """[{id_producto, cantidad}]: cuantos de cada adicional lleva UN plato
+    (2 platos con salsa x1 = 2 salsas)."""
+    if adicionales in (None, ""):
+        return []
+    if not isinstance(adicionales, list):
+        raise ValueError("Adicionales invalidos.")
+    if len(adicionales) > MAX_ADICIONALES_POR_PLATO:
+        raise ValueError(f"Máximo {MAX_ADICIONALES_POR_PLATO} adicionales por plato.")
+    limpios: dict[int, int] = {}
+    for ad in adicionales:
+        if not isinstance(ad, dict):
+            raise ValueError("Adicional invalido.")
+        id_producto = parse_int(ad.get("id_producto"), "Adicional", min_value=1)
+        cantidad = parse_int(ad.get("cantidad") or 1, "La cantidad del adicional", min_value=1, max_value=20)
+        limpios[id_producto] = limpios.get(id_producto, 0) + cantidad
+    return [{"id_producto": pid, "cantidad": cant} for pid, cant in limpios.items()]
 
 
 def _telefono(valor) -> str | None:
@@ -358,19 +387,25 @@ def agregar_items(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | L
         sitio, pedido = _ubicar(cur, id_sede, lugar)
 
         cur.execute("SELECT COUNT(*) AS n FROM pedido_items WHERE id_pedido = %s", (pedido["id_pedido"],))
-        if cur.fetchone()["n"] + len(items) > MAX_LINEAS_POR_PEDIDO:
+        if cur.fetchone()["n"] + sum(1 + len(i["adicionales"]) for i in items) > MAX_LINEAS_POR_PEDIDO:
             raise Conflicto("La cuenta tiene demasiadas líneas. Cóbrala y abre otra.")
 
-        ids = sorted({i["id_producto"] for i in items})
+        ids = sorted({i["id_producto"] for i in items} | {a["id_producto"] for i in items for a in i["adicionales"]})
         marcadores = ", ".join(["%s"] * len(ids))
         cur.execute(
-            f"SELECT id_producto, nombre, precio_venta, controla_stock FROM productos "
+            f"SELECT id_producto, nombre, precio_venta, controla_stock, es_adicional FROM productos "
             f"WHERE id_tienda = %s AND estado_activo = 1 AND id_producto IN ({marcadores})",
             (id_tienda, *ids),
         )
         productos = {p["id_producto"]: p for p in cur.fetchall()}
         if len(productos) != len(ids):
             raise NoEncontrado("Producto no encontrado.")
+        for item in items:
+            if productos[item["id_producto"]]["es_adicional"]:
+                raise ValueError(f"{productos[item['id_producto']]['nombre']} es un adicional: agrégaselo a un plato.")
+            for ad in item["adicionales"]:
+                if not productos[ad["id_producto"]]["es_adicional"]:
+                    raise ValueError(f"{productos[ad['id_producto']]['nombre']} no es un adicional.")
 
         agregados = 0
         for item in items:
@@ -386,6 +421,15 @@ def agregar_items(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | L
                 (pedido["id_pedido"], producto["id_producto"], item["cantidad"], producto["precio_venta"],
                  item["nota"], item["uuid"], id_usuario),
             )
+            id_plato = cur.lastrowid
+            for ad in item["adicionales"]:
+                extra = productos[ad["id_producto"]]
+                cur.execute(
+                    "INSERT INTO pedido_items (id_pedido, id_producto, id_item_padre, cantidad, precio_unitario, creado_por) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (pedido["id_pedido"], extra["id_producto"], id_plato, item["cantidad"] * ad["cantidad"],
+                     extra["precio_venta"], id_usuario),
+                )
             agregados += 1
 
         # Aviso (no bloqueo): lo pendiente de este pedido contra el stock de la sede.
@@ -427,10 +471,16 @@ def enviar_comanda(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | 
         cur = conn.cursor(dictionary=True)
         sitio, pedido = _ubicar(cur, id_sede, lugar)
         _activo(sitio, pedido)
-        pendientes = [l for l in _lineas(cur, pedido["id_pedido"]) if l["estado"] == "pendiente"]
+        todas = _lineas(cur, pedido["id_pedido"])
+        pendientes = [l for l in todas if l["estado"] == "pendiente"]
         if not pendientes:
             conn.rollback()
             return {"comandas": [], "msg": "No hay nada nuevo para enviar."}
+        # Un adicional va a la estacion de su plato (la salsa de la hamburguesa, a cocina).
+        estacion_de = {l["id_item"]: l["estacion"] for l in todas}
+        for linea in pendientes:
+            if linea["id_item_padre"]:
+                linea["estacion"] = estacion_de.get(linea["id_item_padre"], linea["estacion"])
 
         consumo: dict[int, Decimal] = defaultdict(Decimal)
         preparados: dict[int, Decimal] = defaultdict(Decimal)
@@ -470,7 +520,8 @@ def enviar_comanda(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | 
                 "estacion": estacion,
                 "mesa": sitio["nombre"],
                 "lugar": sitio["titulo"],
-                "items": [{"nombre": l["nombre"], "cantidad": float(l["cantidad"]), "nota": l["nota"]} for l in lineas],
+                "items": [{"nombre": l["nombre"], "cantidad": float(l["cantidad"]), "nota": l["nota"],
+                           "adicional": bool(l["id_item_padre"])} for l in lineas],
             })
         directos = [l["id_item"] for l in pendientes if l["estacion"] == "ninguna"]
         if directos:
@@ -485,62 +536,73 @@ def enviar_comanda(id_tienda: int, id_sede: int, id_usuario: int, lugar: Mesa | 
     return {"comandas": comandas, "msg": "Enviado a cocina." if comandas else "Listo, no lleva preparación."}
 
 
+def _anular_linea(cur, id_tienda: int, id_sede: int, id_usuario: int, item: dict, motivo: str | None,
+                  devolver: bool, recetas: bool) -> None:
+    cur.execute(
+        "UPDATE pedido_items SET estado = 'anulado', anulado_por = %s, anulado_en = %s, motivo_anulacion = %s "
+        "WHERE id_item = %s",
+        (id_usuario, ahora_local(), motivo, item["id_item"]),
+    )
+    if item["estado"] == "pendiente":
+        return
+    # La pantalla de cocina ve el cambio en su siguiente consulta.
+    cur.execute("UPDATE comandas SET actualizada_en = NOW(3) WHERE id_comanda = %s", (item["id_comanda"],))
+    cantidad = Decimal(item["cantidad"])
+    if devolver:
+        razon = f"Anulado sin preparar: {motivo}"
+        if item["controla_stock"]:
+            inventario_service.devolver(cur, id_tienda, id_sede, id_usuario, item["id_producto"], cantidad,
+                                        razon, id_pedido=item["id_pedido"])
+        elif item["es_preparado"] and recetas:
+            insumos = recetas_service.consumo_insumos(cur, {item["id_producto"]: cantidad})
+            for id_insumo in sorted(insumos):
+                inventario_service.devolver(cur, id_tienda, id_sede, id_usuario, id_insumo, insumos[id_insumo],
+                                            razon, "insumo", item["id_pedido"])
+    else:
+        cur.execute(
+            "INSERT INTO mermas (id_tienda, id_sede, id_item, id_producto, cantidad, costo_unitario, motivo, id_usuario) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (id_tienda, id_sede, item["id_item"], item["id_producto"], cantidad, item["precio_costo"], motivo, id_usuario),
+        )
+    _auditoria(cur, id_tienda, id_usuario, "anular_item_enviado",
+               f"{item['nombre']} x{cantidad:g} ({'devuelto' if devolver else 'merma'}): {motivo}")
+
+
 def anular_item(id_tienda: int, id_sede: int, id_usuario: int, rol: str, id_item: int, data: dict) -> None:
     """Pendiente: se quita sin costo. Ya enviado: solo un Admin, con motivo.
     Si no se alcanzo a preparar (`devolver`), el inventario vuelve; si no,
     queda como merma (lo cocinado ya se gasto). Un plato con receta devuelve
-    sus insumos segun la receta de hoy."""
+    sus insumos segun la receta de hoy. Los adicionales del plato se anulan
+    con el."""
     motivo = sanitize_optional_text(data.get("motivo"), "El motivo", max_len=200)
     devolver = parse_bool(data.get("devolver") or False)
     conn = get_db()
     try:
         cur = conn.cursor(dictionary=True)
-        cur.execute(
+        columnas = (
             "SELECT i.id_item, i.id_pedido, i.id_producto, i.cantidad, i.estado, i.id_comanda, p.estado AS estado_pedido, "
             "pr.nombre, pr.controla_stock, pr.es_preparado, pr.precio_costo "
             "FROM pedido_items i JOIN pedidos p ON p.id_pedido = i.id_pedido "
             "JOIN productos pr ON pr.id_producto = i.id_producto "
-            "WHERE i.id_item = %s AND p.id_sede = %s FOR UPDATE",
-            (id_item, id_sede),
         )
+        cur.execute(columnas + "WHERE i.id_item = %s AND p.id_sede = %s FOR UPDATE", (id_item, id_sede))
         item = cur.fetchone()
         if not item or item["estado"] == "anulado":
             raise NoEncontrado("Producto no encontrado en la cuenta.")
         if item["estado_pedido"] not in _ACTIVOS:
             raise Conflicto("La cuenta ya está cerrada.")
-        enviado = item["estado"] != "pendiente"
-        if enviado:
+        # Quitar el plato quita tambien sus adicionales.
+        cur.execute(columnas + "WHERE i.id_item_padre = %s AND i.estado <> 'anulado' ORDER BY i.id_item FOR UPDATE",
+                    (id_item,))
+        lineas = [item] + cur.fetchall()
+        if any(l["estado"] != "pendiente" for l in lineas):
             if rol != "Admin":
                 raise ErrorServicio("Lo que ya fue a cocina solo lo anula un administrador.", 403)
             if not motivo:
                 raise ValueError("Escribe el motivo de la anulación.")
-        cur.execute(
-            "UPDATE pedido_items SET estado = 'anulado', anulado_por = %s, anulado_en = %s, motivo_anulacion = %s "
-            "WHERE id_item = %s",
-            (id_usuario, ahora_local(), motivo, id_item),
-        )
-        if enviado:
-            # La pantalla de cocina ve el cambio en su siguiente consulta.
-            cur.execute("UPDATE comandas SET actualizada_en = NOW(3) WHERE id_comanda = %s", (item["id_comanda"],))
-            cantidad = Decimal(item["cantidad"])
-            if devolver:
-                razon = f"Anulado sin preparar: {motivo}"
-                if item["controla_stock"]:
-                    inventario_service.devolver(cur, id_tienda, id_sede, id_usuario, item["id_producto"], cantidad,
-                                                razon, id_pedido=item["id_pedido"])
-                elif item["es_preparado"] and recetas_service.recetas_activas(cur, id_tienda):
-                    insumos = recetas_service.consumo_insumos(cur, {item["id_producto"]: cantidad})
-                    for id_insumo in sorted(insumos):
-                        inventario_service.devolver(cur, id_tienda, id_sede, id_usuario, id_insumo, insumos[id_insumo],
-                                                    razon, "insumo", item["id_pedido"])
-            else:
-                cur.execute(
-                    "INSERT INTO mermas (id_tienda, id_sede, id_item, id_producto, cantidad, costo_unitario, motivo, id_usuario) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                    (id_tienda, id_sede, id_item, item["id_producto"], cantidad, item["precio_costo"], motivo, id_usuario),
-                )
-            _auditoria(cur, id_tienda, id_usuario, "anular_item_enviado",
-                       f"{item['nombre']} x{cantidad:g} ({'devuelto' if devolver else 'merma'}): {motivo}")
+        recetas = recetas_service.recetas_activas(cur, id_tienda)
+        for linea in lineas:
+            _anular_linea(cur, id_tienda, id_sede, id_usuario, linea, motivo, devolver, recetas)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -763,9 +825,12 @@ def _registrar_venta(cur, id_tienda: int, id_sede: int, id_usuario: int, turno: 
     )
     id_venta = cur.lastrowid
     cur.executemany(
-        "INSERT INTO detalle_ventas (id_venta, id_producto, cantidad, unidad_venta, precio_unitario_historico, subtotal_linea) "
-        "VALUES (%s, %s, %s, 'Unidad', %s, %s)",
-        [(id_venta, pid, cant, precio, sub) for pid, cant, precio, sub in detalle],
+        # El costo de hoy (receta o carta) queda fijo en la venta: la utilidad
+        # de un mes cerrado no cambia si despues sube un insumo.
+        "INSERT INTO detalle_ventas (id_venta, id_producto, cantidad, unidad_venta, precio_unitario_historico, "
+        "costo_unitario_historico, subtotal_linea) "
+        "SELECT %s, p.id_producto, %s, 'Unidad', %s, p.precio_costo, %s FROM productos p WHERE p.id_producto = %s",
+        [(id_venta, cant, precio, sub, pid) for pid, cant, precio, sub in detalle],
     )
     al_cajon = a_pagar if metodo == "Efectivo" else (efectivo or Decimal(0))
     if al_cajon:

@@ -2,7 +2,8 @@
 
 Plan Completo, sede Principal, 2 zonas con 10 mesas, una carta corta (cocina y
 bar, con inventario en las bebidas), insumos con compras y recetas para
-cuatro platos (uno pasa del 35 % de costo, para ver la alerta), dos
+cuatro platos (uno pasa del 35 % de costo, para ver la alerta), tres
+adicionales con receta (una salsa gratis y dos extras cobrados), dos
 domiciliarios (Pedro y Luisa) y un usuario
 por rol:
 
@@ -12,8 +13,9 @@ por rol:
     cajero@demo.chef   Cajero  (abre caja y cobra)
 
 Todos con la misma contrasena, que se pide por consola (o DEMO_CLAVE).
-Usa la base del .env. Si el restaurante "Demo Chef" ya existe, solo le agrega
-los insumos y recetas si aun no tiene.
+Usa la base del .env. Se puede correr varias veces: si el restaurante "Demo
+Chef" ya existe, crea los usuarios que falten, les pone a los cuatro la
+contrasena dada (y los reactiva) y agrega insumos y recetas si aun no tiene.
 
     python scripts/crear_demo.py
 """
@@ -25,6 +27,8 @@ import sys
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
+
+from werkzeug.security import generate_password_hash  # noqa: E402
 
 from app import create_app  # noqa: E402
 from app.services import (  # noqa: E402
@@ -82,6 +86,13 @@ RECETAS = {
     "Limonada natural": [("Limon", 3), ("Azucar", 40)],
 }
 
+# adicionales: nombre, categoria, precio como adicional (0 = gratis), receta
+ADICIONALES = [
+    ("Salsa de la casa", "Salsas", 0, [("Huevo", 1), ("Limon", 1)]),
+    ("Huevo frito", "Extras", 2000, [("Huevo", 1)]),
+    ("Porcion de chicharron", "Extras", 6000, [("Chicharron", 100)]),
+]
+
 USUARIOS = [("Mesero Demo", "mesero", "Mesero", "1000000002"),
             ("Cocina Demo", "cocina", "Cocina", "1000000003"),
             ("Cajero Demo", "cajero", "Cajero", "1000000004")]
@@ -105,11 +116,16 @@ def main() -> int:
             conn.close()
         if existente:
             id_tienda, id_sede, id_admin = _ids(NOMBRE)
+            asegurar_usuarios(id_tienda, id_sede, clave)
+            print("Usuarios listos con la contrasena dada: " + ", ".join(_correos()))
             if sembrar_domiciliarios(id_tienda, id_sede):
                 print(f'"{NOMBRE}": le agregué los domiciliarios {", ".join(DOMICILIARIOS)}.')
-            if sembrar_recetas(id_tienda, id_sede, id_admin):
+            recetas = sembrar_recetas(id_tienda, id_sede, id_admin)
+            if recetas:
                 print(f'"{NOMBRE}" ya existía: le agregué {len(INSUMOS)} insumos y {len(RECETAS)} recetas.')
-            else:
+            if sembrar_adicionales(id_tienda, id_sede):
+                print(f'"{NOMBRE}": le agregué los adicionales {", ".join(a[0] for a in ADICIONALES)}.')
+            elif not recetas:
                 print(f'"{NOMBRE}" ya existe. Entra con admin@{DOMINIO}.')
             return 0
 
@@ -143,11 +159,46 @@ def main() -> int:
                 )
 
         sembrar_recetas(id_tienda, id_sede, id_admin)
+        sembrar_adicionales(id_tienda, id_sede)
         sembrar_domiciliarios(id_tienda, id_sede)
 
     print(f'Listo: "{NOMBRE}" con {sum(map(len, ZONAS.values()))} mesas, {len(CARTA)} productos y {len(RECETAS)} recetas.')
-    print("Usuarios: " + ", ".join(f"{p}@{DOMINIO}" for p in ["admin"] + [u[1] for u in USUARIOS]))
+    print("Usuarios: " + ", ".join(_correos()))
     return 0
+
+
+def _correos() -> list[str]:
+    return [f"{p}@{DOMINIO}" for p in ["admin"] + [u[1] for u in USUARIOS]]
+
+
+def asegurar_usuarios(id_tienda: int, id_sede: int, clave: str) -> None:
+    """Crea los usuarios por rol que falten y deja a los cuatro activos y con
+    la contrasena dada, hasheada igual que la app."""
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT correo FROM usuarios WHERE id_tienda = %s AND estado_activo = 1", (id_tienda,))
+        existentes = {fila[0] for fila in cur.fetchall()}
+    finally:
+        conn.close()
+    for nombre, prefijo, rol, cc in USUARIOS:
+        if f"{prefijo}@{DOMINIO}" not in existentes:
+            usuario_service.crear_usuario(id_tienda, {
+                "nombre": nombre, "cc": cc, "rol": rol, "id_sede": id_sede,
+                "correo": f"{prefijo}@{DOMINIO}", "password": clave, "confirm_password": clave,
+            })
+    correos = _correos()
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE usuarios SET clave_hash = %s, estado_activo = 1 "
+            f"WHERE id_tienda = %s AND correo IN ({', '.join(['%s'] * len(correos))})",
+            (generate_password_hash(clave), id_tienda, *correos),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 DOMICILIARIOS = ("Pedro", "Luisa")
@@ -198,6 +249,21 @@ def sembrar_recetas(id_tienda: int, id_sede: int, id_admin: int) -> bool:
         if plato in platos:
             recetas_service.guardar_receta(id_tienda, platos[plato], {
                 "lineas": [{"id_insumo": ids[i], "cantidad": q} for i, q in lineas]})
+    return True
+
+
+def sembrar_adicionales(id_tienda: int, id_sede: int) -> bool:
+    """Salsas y extras para agregarle a los platos, con su receta. No hace
+    nada si la carta ya tiene algun adicional."""
+    if any(p["es_adicional"] for p in carta_service.listar(id_tienda, id_sede)):
+        return False
+    insumos = {i["nombre"]: i["id_insumo"] for i in recetas_service.listar_insumos(id_tienda, id_sede)}
+    for nombre, categoria, precio, receta in ADICIONALES:
+        id_producto = carta_service.crear(id_tienda, {
+            "nombre": nombre, "categoria": categoria, "precio_venta": precio, "es_adicional": True})
+        lineas = [{"id_insumo": insumos[i], "cantidad": q} for i, q in receta if i in insumos]
+        if lineas:
+            recetas_service.guardar_receta(id_tienda, id_producto, {"lineas": lineas})
     return True
 
 

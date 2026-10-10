@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+{% block title %}Reportes{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/reportes.js') }}" defer></script>
+{% endblock %}
+{% macro barra(pct) -%}
+<svg class="barra-dato" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true"><rect width="{{ [pct, 0.5]|max }}" height="10" /></svg>
+{%- endmacro %}
+{% macro variacion(v) -%}
+{% if v %}<small class="variacion variacion--{{ 'sube' if v.sube else 'baja' }}">{{ '▲' if v.sube else '▼' }} {{ v.texto }} vs periodo anterior</small>{% endif %}
+{%- endmacro %}
+{% block content %}
+<h1>Reportes</h1>
+<p class="muted">{{ periodo.etiqueta }}{% if sede == 'todas' and sedes|length > 1 %} · todas las sedes{% elif sedes|length > 1 %} · sede {{ (sedes|selectattr('id_sede', 'equalto', ids[0])|first).nombre }}{% endif %}</p>
+
+<form class="filtros" method="get" action="{{ url_for('reportes.reportes_page') }}" id="filtros-reportes">
+  <input type="hidden" name="pestana" value="{{ pestana }}" />
+  <label>Periodo
+    <select name="periodo" id="filtro-periodo">
+      {% for clave, texto in periodos.items() %}<option value="{{ clave }}"{{ ' selected' if periodo.clave == clave }}>{{ texto }}</option>{% endfor %}
+    </select>
+  </label>
+  <span class="filtros__rango" id="filtro-rango"{{ ' hidden' if periodo.clave != 'rango' }}>
+    <label>Desde <input type="date" name="desde" value="{{ periodo.desde }}" /></label>
+    <label>Hasta <input type="date" name="hasta" value="{{ periodo.hasta }}" /></label>
+  </span>
+  {% if sedes|length > 1 %}
+  <label>Sede
+    <select name="sede">
+      <option value="todas"{{ ' selected' if sede == 'todas' }}>Todas</option>
+      {% for s in sedes %}<option value="{{ s.id_sede }}"{{ ' selected' if sede == s.id_sede|string }}>{{ s.nombre }}{% if s.estado != 'Activa' %} (eliminada){% endif %}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <button class="btn" type="submit">Ver</button>
+</form>
+
+<nav class="pestanas" aria-label="Secciones">
+  {% for clave, texto in pestanas %}
+    <a class="pestana{{ ' pestana--activa' if pestana == clave }}" href="{{ url_for('reportes.reportes_page', pestana=clave, **filtros_url) }}">{{ texto }}</a>
+  {% endfor %}
+</nav>
+
+{% if pestana == 'resumen' %}
+<section class="tarjeta">
+  <div class="cifras cifras--kpi">
+    <div><small>Ventas</small><strong>{{ r.ventas|pesos }}</strong>{{ variacion(r.var_ventas) }}</div>
+    <div><small>Utilidad neta</small><strong class="{{ 'texto-peligro' if r.utilidad_neta < 0 }}">{{ r.utilidad_neta|pesos }}</strong>
+      {% if r.margen_neto is not none %}<small class="muted">{{ r.margen_neto|numero(1) }} % de las ventas</small>{% endif %}{{ variacion(r.var_utilidad) }}</div>
+    <div><small>Ventas cobradas</small><strong>{{ r.num_ventas }}</strong><small class="muted">Ticket promedio {{ r.ticket_promedio|pesos }}</small></div>
+    <div><small>Propinas</small><strong>{{ r.propinas|pesos }}</strong><small class="muted">De los meseros, no es venta</small></div>
+  </div>
+  {% if r.sin_costo %}
+  <p class="franja">{{ r.sin_costo }} producto{{ '' if r.sin_costo == 1 else 's' }} vendido{{ '' if r.sin_costo == 1 else 's' }} en este periodo no tiene{{ '' if r.sin_costo == 1 else 'n' }} costo. Ponle receta o costo en la <a href="{{ url_for('salon.carta_page') }}">carta</a>; mientras tanto la utilidad sale más alta de lo real. <a href="{{ url_for('reportes.reportes_page', pestana='ventas', **filtros_url) }}">Ver cuáles</a></p>
+  {% endif %}
+</section>
+
+<div class="reportes-columnas">
+<section class="tarjeta">
+  <h2>Estado de resultados</h2>
+  <table class="tabla estado-resultados">
+    <tbody>
+      <tr><td>Ventas</td><td class="num">{{ r.ventas|pesos }}</td></tr>
+      <tr><td>− Costo de lo vendido <small class="muted">(recetas y costo de la carta)</small></td><td class="num">{{ r.costo|pesos }}</td></tr>
+      <tr class="er-total"><td>Utilidad bruta{% if r.margen_bruto is not none %} <small class="muted">({{ r.margen_bruto|numero(1) }} %)</small>{% endif %}</td><td class="num">{{ r.utilidad_bruta|pesos }}</td></tr>
+      <tr><td>− Mermas <small class="muted">(anulado después de ir a cocina)</small></td><td class="num">{{ r.mermas|pesos }}</td></tr>
+      {% for gc in r.gastos_categoria if gc.operativo %}
+        <tr><td>− {{ gc.nombre }}</td><td class="num">{{ gc.total|pesos }}</td></tr>
+      {% else %}
+        <tr><td>− Gastos</td><td class="num">{{ 0|pesos }}</td></tr>
+      {% endfor %}
+      <tr class="er-total"><td>Utilidad neta</td><td class="num {{ 'texto-peligro' if r.utilidad_neta < 0 }}">{{ r.utilidad_neta|pesos }}</td></tr>
+    </tbody>
+  </table>
+  <h2 class="separado">Flujo de caja</h2>
+  <table class="tabla estado-resultados">
+    <tbody>
+      <tr><td>Entró por ventas</td><td class="num">{{ r.ventas|pesos }}</td></tr>
+      <tr><td>− Gastos</td><td class="num">{{ r.gastos_operacion|pesos }}</td></tr>
+      <tr><td>− Compras de insumos y mercancía</td><td class="num">{{ r.compras|pesos }}</td></tr>
+      <tr class="er-total"><td>Quedó</td><td class="num {{ 'texto-peligro' if r.flujo_caja < 0 }}">{{ r.flujo_caja|pesos }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted"><small>Las compras de insumos no restan en el estado de resultados: se vuelven costo cuando el plato se vende. Aquí sí restan, porque el dinero ya salió. Las propinas no cuentan en ninguno de los dos.</small></p>
+</section>
+
+<section class="tarjeta">
+  <h2>Por medio de pago</h2>
+  <p class="muted"><small>Lo recibido, con propinas.</small></p>
+  <ul class="barras">
+    {% for m in r.metodos %}
+      <li><span>{{ m.metodo }}</span>{{ barra(m.pct) }}<strong>{{ m.total|pesos }}</strong></li>
+    {% endfor %}
+  </ul>
+  {% if r.nota_metodos %}<p class="muted"><small>{{ r.nota_metodos }}</small></p>{% endif %}
+
+  <h2 class="separado">Por tipo de pedido</h2>
+  <ul class="barras">
+    {% for t in r.por_tipo %}
+      <li><span>{{ t.nombre }} <small class="muted">({{ t.n }})</small></span>{{ barra(t.pct) }}<strong>{{ t.total|pesos }}</strong></li>
+    {% else %}
+      <li class="muted">Sin ventas en este periodo.</li>
+    {% endfor %}
+  </ul>
+
+  {% if r.por_sede %}
+  <h2 class="separado">Por sede</h2>
+  <ul class="barras">
+    {% for s in r.por_sede %}
+      <li><span>{{ s.nombre }} <small class="muted">({{ s.n }})</small></span>{{ barra(s.pct) }}<strong>{{ s.total|pesos }}</strong></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+</div>
+
+{% if r.serie|length > 1 %}
+<section class="tarjeta">
+  <div class="cabecera">
+    <h2>Ventas por {{ 'mes' if r.serie_mensual else 'día' }}</h2>
+    <small class="muted">Promedio diario {{ r.venta_diaria|pesos }}</small>
+  </div>
+  <svg class="columnas" viewBox="0 0 {{ r.serie|length * 10 }} 100" preserveAspectRatio="none" role="img" aria-label="Ventas por {{ 'mes' if r.serie_mensual else 'día' }}">
+    {% for d in r.serie %}
+      <g><title>{{ d.etiqueta }}: {{ d.total|pesos }} ({{ d.ventas }} venta{{ '' if d.ventas == 1 else 's' }})</title>
+        <rect class="columnas__fondo" x="{{ loop.index0 * 10 }}" y="0" width="10" height="100" />
+        <rect x="{{ loop.index0 * 10 + 1 }}" y="{{ 100 - d.pct }}" width="8" height="{{ d.pct }}" /></g>
+    {% endfor %}
+  </svg>
+  <div class="columnas__eje"><small>{{ r.serie[0].etiqueta }}</small><small>{{ r.serie[-1].etiqueta }}</small></div>
+  <details>
+    <summary>Ver tabla</summary>
+    <table class="tabla">
+      <thead><tr><th>{{ 'Mes' if r.serie_mensual else 'Día' }}</th><th class="num">Ventas</th><th class="num">Total</th></tr></thead>
+      <tbody>{% for d in r.serie %}<tr><td>{{ d.etiqueta }}</td><td class="num">{{ d.ventas }}</td><td class="num">{{ d.total|pesos }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </details>
+</section>
+{% endif %}
+
+{% if r.por_hora %}
+<section class="tarjeta">
+  <h2>Horas de más venta</h2>
+  <ul class="barras">
+    {% for h in r.por_hora %}
+      <li><span>{{ '%02d'|format(h.hora) }}:00 <small class="muted">({{ h.n }})</small></span>{{ barra(h.pct) }}<strong>{{ h.total|pesos }}</strong></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% elif pestana == 'ventas' %}
+<section class="tarjeta">
+  <div class="cabecera">
+    <h2>Ventas por producto</h2>
+    <a class="btn" href="{{ url_for('reportes.exportar', tipo='productos', **filtros_url) }}">Exportar</a>
+  </div>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Producto</th><th class="num">Cantidad</th><th class="num">Ventas</th><th class="num">Costo</th><th class="num">Utilidad</th><th class="num">Margen</th></tr></thead>
+    <tbody>
+    {% for p in productos %}
+      <tr class="{{ 'fila--alerta' if p.sin_costo }}">
+        <td data-th="Producto"><strong>{{ p.nombre }}</strong>{% if p.categoria %}<br><small class="muted">{{ p.categoria }}</small>{% endif %}
+          <br><small class="muted">{{ p.participacion|numero(1) }} % de las ventas</small></td>
+        <td data-th="Cantidad" class="num">{{ p.cantidad|numero }}</td>
+        <td data-th="Ventas" class="num">{{ p.ventas|pesos }}</td>
+        <td data-th="Costo" class="num">{% if p.sin_costo %}<span class="texto-peligro">Sin costo</span>{% else %}{{ p.costo|pesos }}{% endif %}</td>
+        <td data-th="Utilidad" class="num">{{ p.utilidad|pesos }}</td>
+        <td data-th="Margen" class="num">{% if p.margen is not none and not p.sin_costo %}{{ p.margen|numero(1) }} %{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Sin ventas en este periodo.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="tarjeta">
+  <h2>Ventas por mesero</h2>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Mesero</th><th class="num">Cuentas</th><th class="num">Vendido</th><th class="num">Propinas</th></tr></thead>
+    <tbody>
+    {% for m in meseros %}
+      <tr><td data-th="Mesero"><strong>{{ m.nombre }}</strong></td><td data-th="Cuentas" class="num">{{ m.n }}</td>
+        <td data-th="Vendido" class="num">{{ m.total|pesos }}</td><td data-th="Propinas" class="num">{{ m.propinas|pesos }}</td></tr>
+    {% else %}
+      <tr><td colspan="4" class="muted">Sin ventas en este periodo.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% elif pestana == 'gastos' %}
+<section class="tarjeta">
+  <h2>Registrar gasto</h2>
+  <p class="muted"><small>Aquí van los pagos que no salen del cajón (arriendo por transferencia, nómina de la caja fuerte). Lo que se paga con el efectivo de la caja se registra en <a href="{{ url_for('salon.caja_page') }}">Caja</a>.</small></p>
+  <form class="form form--rejilla" data-api="POST {{ url_for('reportes.api_gastos_crear') }}">
+    <label>Concepto <input name="concepto" maxlength="150" required placeholder="Ej. Arriendo de octubre" /></label>
+    <label>Categoría
+      <select name="categoria">{% for clave, texto in categorias.items() %}<option value="{{ clave }}"{{ ' selected' if clave == 'otros' }}>{{ texto }}</option>{% endfor %}</select>
+    </label>
+    <label>Monto <input name="monto" inputmode="numeric" required /></label>
+    <label>Cómo se pagó
+      <select name="metodo">
+        <option value="transferencia">Transferencia / Nequi</option>
+        <option value="tarjeta">Tarjeta</option>
+        <option value="efectivo">Efectivo de la caja fuerte</option>
+      </select>
+    </label>
+    {% if sedes_activas|length > 1 %}
+    <label>Sede
+      <select name="id_sede">{% for s in sedes_activas %}<option value="{{ s.id_sede }}"{{ ' selected' if s.id_sede == sede_actual_id }}>{{ s.nombre }}</option>{% endfor %}</select>
+    </label>
+    {% endif %}
+    <label>Nota <input name="descripcion" maxlength="255" placeholder="Opcional" /></label>
+    <button class="btn btn--primario" type="submit">Registrar gasto</button>
+  </form>
+  <p class="muted"><small>El gasto queda con la fecha y hora de hoy. Si es de otro mes, dilo en el concepto (ej. Arriendo de septiembre).</small></p>
+</section>
+
+<section class="tarjeta">
+  <div class="cabecera">
+    <div>
+      <h2>Gastos del periodo</h2>
+      <p class="muted">Total {{ total|pesos }} · {{ paginacion.total }} registro{{ '' if paginacion.total == 1 else 's' }}</p>
+    </div>
+    <div class="acciones">
+      <form method="get" action="{{ url_for('reportes.reportes_page') }}" class="form--fila">
+        {% for k, v in filtros_url.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}" />{% endfor %}
+        <input type="hidden" name="pestana" value="gastos" />
+        <select name="categoria" aria-label="Categoría" class="enviar-al-cambiar">
+          <option value="">Todas las categorías</option>
+          {% for clave, texto in categorias.items() %}<option value="{{ clave }}"{{ ' selected' if categoria == clave }}>{{ texto }}</option>{% endfor %}
+        </select>
+        <noscript><button class="btn" type="submit">Filtrar</button></noscript>
+      </form>
+      <a class="btn" href="{{ url_for('reportes.exportar', tipo='gastos', categoria=categoria, **filtros_url) }}">Exportar</a>
+    </div>
+  </div>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Fecha</th><th>Concepto</th><th>Pago</th><th class="num">Monto</th><th></th></tr></thead>
+    <tbody>
+    {% for x in gastos %}
+      <tr class="{{ 'fila--anulada' if not x.activo }}">
+        <td data-th="Fecha">{{ x.fecha }}{% if sedes|length > 1 %}<br><small class="muted">{{ x.sede }}</small>{% endif %}</td>
+        <td data-th="Concepto"><strong>{{ x.concepto }}</strong><br><small class="muted">{{ x.categoria }}{% if x.descripcion %} · {{ x.descripcion }}{% endif %}</small>
+          {% if not x.activo %}<br><span class="chip chip--anulado">Anulado</span> <small class="muted">{{ x.motivo_anulacion }}</small>{% endif %}</td>
+        <td data-th="Pago">{{ x.metodo }}<br><small class="muted">{{ x.origen }} · {{ x.usuario }}</small></td>
+        <td data-th="Monto" class="num"><strong>{{ x.monto|pesos }}</strong></td>
+        <td class="acciones">
+          {% if x.activo %}
+          <details>
+            <summary>Anular</summary>
+            <form class="form form--fila" data-api="POST {{ url_for('reportes.api_gastos_anular', id_gasto=x.id_gasto) }}"
+                  data-confirmar="¿Anular este gasto de {{ x.monto|pesos }}? Queda en el historial como anulado.">
+              <input name="motivo" maxlength="255" required placeholder="Motivo" aria-label="Motivo" />
+              <button class="btn btn--peligro" type="submit">Anular</button>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No hay gastos en este periodo.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if paginacion.paginas > 1 %}
+  <nav class="paginador" aria-label="Páginas">
+    {% if paginacion.pagina > 1 %}<a class="btn" href="{{ url_for('reportes.reportes_page', pestana='gastos', categoria=categoria, pagina=paginacion.pagina - 1, **filtros_url) }}">Anterior</a>{% endif %}
+    <span class="muted">Página {{ paginacion.pagina }} de {{ paginacion.paginas }}</span>
+    {% if paginacion.pagina < paginacion.paginas %}<a class="btn" href="{{ url_for('reportes.reportes_page', pestana='gastos', categoria=categoria, pagina=paginacion.pagina + 1, **filtros_url) }}">Siguiente</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+
+{% else %}
+<section class="tarjeta">
+  <div class="cabecera">
+    <div>
+      <h2>Cierres de caja</h2>
+      <p class="muted">Faltantes {{ faltante|pesos }} · sobrantes {{ sobrante|pesos }}</p>
+    </div>
+    <a class="btn" href="{{ url_for('reportes.exportar', tipo='cierres', **filtros_url) }}">Exportar</a>
+  </div>
+  <table class="tabla tabla--tarjetas">
+    <thead><tr><th>Turno</th><th class="num">Ventas</th><th class="num">Gastos</th><th class="num">Debía haber</th><th class="num">Contado</th><th class="num">Diferencia</th></tr></thead>
+    <tbody>
+    {% for t in turnos %}
+      <tr class="{{ 'fila--alerta' if t.diferencia is not none and t.diferencia < 0 }}">
+        <td data-th="Turno"><strong>{{ t.apertura }}</strong>{% if t.abierto %} <span class="chip chip--ok">Abierta</span>{% else %} → {{ t.cierre }}{% endif %}
+          <br><small class="muted">{% if sedes|length > 1 %}{{ t.sede }} · {% endif %}Abrió {{ t.abrio }}{% if t.cerro %} · cerró {{ t.cerro }}{% endif %} · base {{ t.base|pesos }}</small>
+          {% if t.observaciones %}<br><small class="muted">“{{ t.observaciones }}”</small>{% endif %}</td>
+        <td data-th="Ventas" class="num">{{ t.total_ventas|pesos }}<br><small class="muted">{{ t.ventas }} · propinas {{ t.propinas|pesos }}</small></td>
+        <td data-th="Gastos" class="num">{{ t.gastos|pesos }}</td>
+        <td data-th="Debía haber" class="num">{{ t.esperado|pesos }}</td>
+        <td data-th="Contado" class="num">{% if t.contado is not none %}{{ t.contado|pesos }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td data-th="Diferencia" class="num">{% if t.diferencia is none %}<span class="muted">—</span>
+          {% elif t.diferencia < 0 %}<strong class="texto-peligro">Faltan {{ (-t.diferencia)|pesos }}</strong>
+          {% elif t.diferencia > 0 %}<strong>Sobran {{ t.diferencia|pesos }}</strong>
+          {% else %}<span class="texto-ok">Cuadró</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No se abrió caja en este periodo.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted"><small>“Debía haber” es el efectivo: base + ventas y propinas en efectivo − gastos pagados del cajón.</small></p>
+</section>
+{% endif %}
+{% endblock %}
