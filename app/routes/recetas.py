@@ -248,5 +248,6 @@ def api_receta_guardar(id_producto):
         return _error(exc)
     msg = "Receta guardada." if r["ingredientes"] else "Receta vacía: el plato ya no descuenta ingredientes."
     if r["alerta"]:
-        msg += f" Ojo: los ingredientes cuestan el {r['pct_costo']:g} % del precio."
+        msg += (f" Ojo: los ingredientes cuestan el {r['pct_costo']:g} % del precio." if r["pct_costo"] is not None
+                else " Ojo: no tiene precio y sus ingredientes sí cuestan.")
     return _ok(msg=msg, **r)

@@ -13,6 +13,10 @@
  * guarda en el dispositivo). "Enviar a cocina" lo guarda en la cuenta y lo
  * manda a cocina, que es cuando se descuenta el inventario. Sin conexion,
  * todo eso queda en la cola (salon-comun.js) y se manda al volver internet.
+ *
+ * Adicionales (salsas, extras: productos con es_adicional) no salen en la
+ * carta: se le agregan a un plato de "Por agregar" con su boton. Cada uno es
+ * por plato (2 hamburguesas con salsa x1 = 2 salsas) y se cobra a su precio.
  */
 (function () {
   'use strict';
@@ -68,14 +72,31 @@
     return p ? p.precio_venta : 0;
   }
 
+  function adicionalesDisponibles() { return carta.filter(function (p) { return p.es_adicional; }); }
+
+  /* Precio de una unidad del plato con sus adicionales. */
+  function precioConAdicionales(l) {
+    return (l.adicionales || []).reduce(function (s, a) { return s + a.precio * a.cantidad; }, l.precio);
+  }
+
+  function textoAdicionales(lista, nombre) {
+    return (lista || []).map(function (a) {
+      return '+ ' + (a.cantidad > 1 ? a.cantidad + ' ' : '') + (nombre ? nombre(a.id_producto) : a.nombre);
+    }).join(', ');
+  }
+
   /* Lineas guardadas en la cola sin conexion para este pedido. */
   function lineasEnCola() {
     var lineas = [];
     Chef.pendientesDeMesa(COLA).forEach(function (op) {
       if (!/\/items$/.test(op.url) || !op.cuerpo) return;
       op.cuerpo.items.forEach(function (i) {
-        lineas.push({ nombre: nombreProducto(i.id_producto), cantidad: i.cantidad, nota: i.nota,
-          subtotal: i.cantidad * precioProducto(i.id_producto), estado: op.estado === 'fallo' ? 'fallo' : 'cola' });
+        var unidad = (i.adicionales || []).reduce(function (s, a) {
+          return s + a.cantidad * precioProducto(a.id_producto);
+        }, precioProducto(i.id_producto));
+        var extras = textoAdicionales(i.adicionales, nombreProducto);
+        lineas.push({ nombre: nombreProducto(i.id_producto) + (extras ? ' ' + extras : ''), cantidad: i.cantidad, nota: i.nota,
+          subtotal: i.cantidad * unidad, estado: op.estado === 'fallo' ? 'fallo' : 'cola' });
       });
     });
     return lineas;
@@ -87,8 +108,9 @@
     var filtro = $('buscar').value.trim().toLowerCase();
     var nav = $('categorias');
     nav.textContent = '';
+    var platos = carta.filter(function (p) { return !p.es_adicional; });
     var cats = [];
-    carta.forEach(function (p) { if (p.categoria && cats.indexOf(p.categoria) === -1) cats.push(p.categoria); });
+    platos.forEach(function (p) { if (p.categoria && cats.indexOf(p.categoria) === -1) cats.push(p.categoria); });
     if (cats.length) {
       ['todas'].concat(cats).forEach(function (c) {
         nav.appendChild(boton(c === 'todas' ? 'Todo' : c, 'pestana' + (c === categoria ? ' pestana--activa' : ''), function () {
@@ -98,8 +120,8 @@
     }
     var cont = $('productos');
     cont.textContent = '';
-    $('carta-vacia').hidden = carta.length > 0;
-    carta.forEach(function (p) {
+    $('carta-vacia').hidden = platos.length > 0;
+    platos.forEach(function (p) {
       if (categoria !== 'todas' && p.categoria !== categoria) return;
       if (filtro && p.nombre.toLowerCase().indexOf(filtro) === -1) return;
       var b = boton('', 'producto', function () { agregar(p); });
@@ -124,9 +146,12 @@
       Chef.mostrar('Este domicilio ya salió. Para agregar algo, abre otro pedido.', true);
       return;
     }
-    var linea = borrador.find(function (l) { return l.id_producto === p.id_producto && !l.nota; });
+    var linea = borrador.find(function (l) {
+      return l.id_producto === p.id_producto && !l.nota && !(l.adicionales || []).length;
+    });
     if (linea) linea.cantidad += 1;
-    else borrador.push({ uuid: Chef.uuid(), id_producto: p.id_producto, nombre: p.nombre, precio: p.precio_venta, cantidad: 1, nota: '' });
+    else borrador.push({ uuid: Chef.uuid(), id_producto: p.id_producto, nombre: p.nombre, precio: p.precio_venta, cantidad: 1, nota: '',
+      adicionales: [] });
     guardarBorrador();
     pintarCuenta();
   }
@@ -149,14 +174,14 @@
     ul.textContent = '';
     var total = detalle ? detalle.total : 0;
     (detalle ? detalle.items : []).forEach(function (i) {
-      var li = el('li', 'linea linea--' + i.estado);
+      var li = el('li', 'linea linea--' + i.estado + (i.id_item_padre ? ' linea--adicional' : ''));
       var info = el('div', 'linea__info');
-      info.appendChild(el('span', 'linea__nombre', i.cantidad + ' × ' + i.nombre));
+      info.appendChild(el('span', 'linea__nombre', (i.id_item_padre ? '+ ' : '') + i.cantidad + ' × ' + i.nombre));
       if (i.nota) info.appendChild(el('small', 'linea__nota', i.nota));
       var estado = ESTADOS[i.estado] + (i.numero_comanda ? ' · #' + i.numero_comanda : '');
       info.appendChild(el('small', 'chip chip--' + i.estado, estado));
       li.appendChild(info);
-      li.appendChild(el('span', 'linea__valor', Chef.pesos(i.subtotal)));
+      li.appendChild(el('span', 'linea__valor', i.id_item_padre && !i.subtotal ? 'Gratis' : Chef.pesos(i.subtotal)));
       if (!cerrado && i.estado !== 'anulado' && (i.estado === 'pendiente' || esAdmin)) {
         li.appendChild(boton('Quitar', 'btn-link btn-link--peligro', function () { abrirAnular(i); }));
       }
@@ -177,11 +202,14 @@
     var nuevos = $('nuevos');
     nuevos.textContent = '';
     $('bloque-nuevos').hidden = borrador.length === 0;
+    var extras = adicionalesDisponibles();
     borrador.forEach(function (l, idx) {
-      total += l.precio * l.cantidad;
+      if (!l.adicionales) l.adicionales = [];
+      total += precioConAdicionales(l) * l.cantidad;
       var li = el('li', 'linea linea--nueva');
       var info = el('div', 'linea__info');
       info.appendChild(el('span', 'linea__nombre', l.nombre));
+
       var nota = el('input', 'linea__nota-input');
       nota.placeholder = 'Nota para cocina';
       nota.maxLength = 150;
@@ -198,7 +226,9 @@
       cant.appendChild(el('span', '', String(l.cantidad)));
       cant.appendChild(boton('+', 'btn btn--mini', function () { l.cantidad += 1; guardarBorrador(); pintarCuenta(); }));
       li.appendChild(cant);
-      li.appendChild(el('span', 'linea__valor', Chef.pesos(l.precio * l.cantidad)));
+      li.appendChild(el('span', 'linea__valor', Chef.pesos(precioConAdicionales(l) * l.cantidad)));
+      // Debajo del plato, a todo el ancho: en el celular no cabe al lado.
+      if (l.adicionales.length || extras.length) li.appendChild(selectorAdicionales(l, extras));
       nuevos.appendChild(li);
     });
 
@@ -221,6 +251,46 @@
     var porEnviar = borrador.length + (detalle ? detalle.sin_enviar : 0);
     $('btn-enviar').disabled = porEnviar === 0;
     $('btn-enviar').textContent = porEnviar ? 'Enviar a cocina' : 'Nada por enviar';
+  }
+
+  /* Chips de los adicionales elegidos (tocar uno lo quita) y el boton que
+   * despliega los disponibles. */
+  var abiertoAdicionales = null;  // uuid de la linea con la lista abierta
+
+  function selectorAdicionales(l, extras) {
+    var caja = el('div', 'adicionales');
+    l.adicionales.forEach(function (a, k) {
+      var chip = boton('+ ' + (a.cantidad > 1 ? a.cantidad + ' ' : '') + a.nombre + (a.precio ? ' ' + Chef.pesos(a.precio * a.cantidad) : '') + ' ✕',
+        'chip chip--adicional', function () {
+          a.cantidad -= 1;
+          if (a.cantidad <= 0) l.adicionales.splice(k, 1);
+          guardarBorrador(); pintarCuenta();
+        });
+      chip.title = 'Quitar uno';
+      caja.appendChild(chip);
+    });
+    if (!extras.length) return caja;
+    var abierto = abiertoAdicionales === l.uuid;
+    caja.appendChild(boton(abierto ? 'Listo' : '+ Adicional', 'btn-link', function () {
+      abiertoAdicionales = abierto ? null : l.uuid;
+      pintarCuenta();
+    }));
+    if (abierto) {
+      var lista = el('div', 'adicionales__lista');
+      extras.forEach(function (p) {
+        var b = boton(p.nombre + (p.precio_venta ? ' ' + Chef.pesos(p.precio_venta) : ' (gratis)'), 'btn btn--mini', function () {
+          var ya = l.adicionales.find(function (a) { return a.id_producto === p.id_producto; });
+          if (ya) ya.cantidad += 1;
+          else l.adicionales.push({ id_producto: p.id_producto, nombre: p.nombre, precio: p.precio_venta, cantidad: 1 });
+          guardarBorrador(); pintarCuenta();
+        });
+        var quedan = p.stock_actual !== null && p.stock_actual !== undefined ? p.stock_actual : p.disponibles;
+        if (quedan !== null && quedan !== undefined && quedan <= 0) b.classList.add('producto__stock--agotado');
+        lista.appendChild(b);
+      });
+      caja.appendChild(lista);
+    }
+    return caja;
   }
 
   function titulo() {
@@ -290,7 +360,8 @@
   function guardarItems() {
     if (!borrador.length) return Promise.resolve(true);
     var cuerpo = { items: borrador.map(function (l) {
-      return { id_producto: l.id_producto, cantidad: l.cantidad, nota: l.nota || null, uuid: l.uuid };
+      return { id_producto: l.id_producto, cantidad: l.cantidad, nota: l.nota || null, uuid: l.uuid,
+        adicionales: (l.adicionales || []).map(function (a) { return { id_producto: a.id_producto, cantidad: a.cantidad }; }) };
     }) };
     if (llevar) {
       cuerpo.cliente = $('cliente-nombre').value.trim() || null;
@@ -354,7 +425,7 @@
         bloque.appendChild(el('h2', '', (c.estacion === 'bar' ? 'BAR' : 'COCINA') + ' #' + c.numero));
         bloque.appendChild(el('p', '', c.lugar + ' · ' + new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })));
         c.items.forEach(function (i) {
-          bloque.appendChild(el('p', 'ticket__linea', i.cantidad + ' × ' + i.nombre));
+          bloque.appendChild(el('p', 'ticket__linea', (i.adicional ? '  + ' : '') + i.cantidad + ' × ' + i.nombre));
           if (i.nota) bloque.appendChild(el('p', 'ticket__nota', '  → ' + i.nota));
         });
         zona.appendChild(bloque);
@@ -369,7 +440,7 @@
       t.appendChild(el('p', '', 'Documento sin valor fiscal'));
       d.items.forEach(function (i) {
         if (i.estado === 'anulado') return;
-        t.appendChild(el('p', 'ticket__linea', i.cantidad + ' × ' + i.nombre + '  ' + Chef.pesos(i.subtotal)));
+        t.appendChild(el('p', 'ticket__linea', (i.id_item_padre ? '  + ' : '') + i.cantidad + ' × ' + i.nombre + '  ' + Chef.pesos(i.subtotal)));
       });
       t.appendChild(el('p', 'ticket__total', 'Total ' + Chef.pesos(d.total)));
       t.appendChild(el('p', '', 'Propina sugerida (10 %, voluntaria) ' + Chef.pesos(d.propina_sugerida)));
@@ -531,7 +602,7 @@
         var queda = redondear(i.cantidad - repartido(i.id_item));
         if (queda > 0) {
           var li = el('li', 'linea');
-          li.appendChild(el('span', 'linea__info', queda + ' × ' + i.nombre));
+          li.appendChild(el('span', 'linea__info', (i.id_item_padre ? '+ ' : '') + queda + ' × ' + i.nombre));
           li.appendChild(el('span', 'linea__valor', Chef.pesos(queda * i.precio_unitario)));
           li.addEventListener('click', function () {
             activa.items[i.id_item] = redondear((activa.items[i.id_item] || 0) + Math.min(1, queda));
@@ -542,7 +613,7 @@
         var mia = activa.items[i.id_item] || 0;
         if (mia > 0) {
           var li2 = el('li', 'linea');
-          li2.appendChild(el('span', 'linea__info', mia + ' × ' + i.nombre));
+          li2.appendChild(el('span', 'linea__info', (i.id_item_padre ? '+ ' : '') + mia + ' × ' + i.nombre));
           li2.appendChild(el('span', 'linea__valor', Chef.pesos(mia * i.precio_unitario)));
           li2.addEventListener('click', function () {
             var resto = redondear(mia - Math.min(1, mia));
@@ -655,7 +726,7 @@
         if (division.modo === 'items') {
           lineasDivisibles().forEach(function (i) {
             var cant = p.items[i.id_item];
-            if (cant) t.appendChild(el('p', 'ticket__linea', cant + ' × ' + i.nombre + '  ' + Chef.pesos(cant * i.precio_unitario)));
+            if (cant) t.appendChild(el('p', 'ticket__linea', (i.id_item_padre ? '  + ' : '') + cant + ' × ' + i.nombre + '  ' + Chef.pesos(cant * i.precio_unitario)));
           });
         } else {
           t.appendChild(el('p', '', 'Parte ' + (idx + 1) + ' de ' + division.partes.length + ' de ' + Chef.pesos(detalle.total)));

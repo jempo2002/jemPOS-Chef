@@ -330,6 +330,13 @@ details[open] { flex-basis: 100%; }
 .linea__nota { color: var(--texto-suave); font-style: italic; }
 .linea__nota-input { min-height: 36px; padding: 0.25rem 0.5rem; font-size: 0.85rem; }
 .linea__valor { font-weight: 700; white-space: nowrap; }
+.linea--adicional { padding-left: 1rem; font-size: 0.92rem; }
+.linea--adicional .linea__nombre { font-weight: 500; }
+.linea--nueva { flex-wrap: wrap; }
+.adicionales { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.adicionales__lista { display: flex; flex-wrap: wrap; gap: 0.35rem; width: 100%; padding: 0.5rem; border-radius: var(--radio); background: var(--primario-suave); }
+.adicionales__lista .btn { width: auto; font-size: 0.85rem; padding: 0.3rem 0.65rem; white-space: nowrap; }
+.chip--adicional { background: var(--primario-suave); color: var(--primario-hover); border-color: var(--primario-linea); cursor: pointer; font: inherit; font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
 .linea--anulado .linea__nombre, .linea--anulado .linea__valor { text-decoration: line-through; color: var(--texto-suave); }
 .cantidad { display: flex; align-items: center; gap: 0.35rem; }
 .chip--pendiente { background: #fef3c7; color: #92400e; border-color: #fde68a; }
@@ -366,6 +373,7 @@ details[open] { flex-basis: 100%; }
 .comanda__cab { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 1.05rem; }
 .comanda__items { margin: 0; padding-left: 1.1rem; font-size: 1.05rem; font-weight: 600; }
 .comanda__items .anulado { text-decoration: line-through; color: var(--peligro); }
+.comanda__items .adicional { list-style: none; margin-left: 0.6rem; font-weight: 500; }
 .comanda__nota { display: block; font-weight: 500; font-style: italic; color: var(--primario-hover); }
 
 .cifras { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }

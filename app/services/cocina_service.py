@@ -66,14 +66,16 @@ def comandas(id_sede: int, estacion: str, desde=None) -> dict:
             ids = [f["id_comanda"] for f in filas]
             marcadores = ", ".join(["%s"] * len(ids))
             cur.execute(
-                "SELECT i.id_comanda, pr.nombre, i.cantidad, i.nota, i.estado = 'anulado' AS anulado "
+                "SELECT i.id_comanda, pr.nombre, i.cantidad, i.nota, i.estado = 'anulado' AS anulado, "
+                "i.id_item_padre IS NOT NULL AS adicional "
                 "FROM pedido_items i JOIN productos pr ON pr.id_producto = i.id_producto "
                 f"WHERE i.id_comanda IN ({marcadores}) ORDER BY i.id_item",
                 tuple(ids),
             )
             for i in cur.fetchall():
                 items.setdefault(i["id_comanda"], []).append(
-                    {"nombre": i["nombre"], "cantidad": float(i["cantidad"]), "nota": i["nota"], "anulado": bool(i["anulado"])}
+                    {"nombre": i["nombre"], "cantidad": float(i["cantidad"]), "nota": i["nota"], "anulado": bool(i["anulado"]),
+                     "adicional": bool(i["adicional"])}
                 )
         cur.execute("SELECT NOW(3) AS ahora")
         ahora = cur.fetchone()["ahora"]

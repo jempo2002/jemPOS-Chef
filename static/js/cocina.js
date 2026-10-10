@@ -47,7 +47,9 @@
     t.appendChild(cab);
     var ul = el('ul', 'comanda__items');
     c.items.forEach(function (i) {
-      var li = el('li', i.anulado ? 'anulado' : '', i.cantidad + ' × ' + i.nombre + (i.anulado ? ' (ANULADO)' : ''));
+      // Un adicional (salsa, extra) sale debajo de su plato.
+      var li = el('li', (i.anulado ? 'anulado' : '') + (i.adicional ? ' adicional' : ''),
+        (i.adicional ? '+ ' : '') + i.cantidad + ' × ' + i.nombre + (i.anulado ? ' (ANULADO)' : ''));
       if (i.nota) li.appendChild(el('small', 'comanda__nota', i.nota));
       ul.appendChild(li);
     });

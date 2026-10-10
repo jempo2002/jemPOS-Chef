@@ -32,6 +32,8 @@ python scripts/run_migration.py migrations/2026-10-07b_recetas_insumos.sql
 python scripts/run_migration.py migrations/2026-10-07c_cuenta_dividida_llevar.sql
 python scripts/run_migration.py migrations/2026-10-07d_domicilios_recaudo.sql
 python scripts/run_migration.py migrations/2026-10-07e_pago_mixto.sql
+python scripts/run_migration.py migrations/2026-10-09_contabilidad_reportes.sql
+python scripts/run_migration.py migrations/2026-10-10_adicionales.sql
 python scripts/crear_master.py "Tu nombre" tu@correo.com
 python run.py                   # http://127.0.0.1:5000
 ```
