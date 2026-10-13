@@ -40,12 +40,20 @@ small { font-size: 0.8rem; }
 .marca span { color: var(--primario); }
 
 /* Login y pantallas sueltas */
-.auth { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
+.auth { min-height: 100vh; display: grid; place-items: center; padding: 4.5rem 1rem 1rem; }
 .auth__card {
   width: 100%; max-width: 26rem; background: var(--superficie); border: 1px solid var(--borde);
   border-radius: var(--radio-lg); box-shadow: var(--sombra); padding: 1.75rem;
 }
 .auth__card .marca { text-align: center; font-size: 1.6rem; margin-bottom: 1rem; }
+.volver {
+  position: absolute; top: 1rem; left: 1rem; display: inline-flex; align-items: center; gap: 0.5rem;
+  min-height: var(--toque); padding: 0 1rem; border: 1px solid var(--borde); border-radius: 999px;
+  background: var(--superficie); box-shadow: var(--sombra); color: var(--texto);
+  font-size: 0.9rem; font-weight: 600; text-decoration: none; transition: color 0.2s, border-color 0.2s;
+}
+.volver:hover, .volver:focus-visible { color: var(--primario); border-color: var(--primario-500); }
+.volver__ico { width: 1rem; height: 1rem; }
 .pie { text-align: center; margin: 1rem 0 0; font-size: 0.9rem; }
 
 /* Barra superior */
