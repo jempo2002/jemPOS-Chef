@@ -120,3 +120,12 @@ def test_sesion_y_limites_en_redis(client, crear):
     claves = [k.decode() for k in r.keys("*")]
     assert any(k.startswith("chef:sesion:") for k in claves), claves
     assert any("LIMITER" in k or "limiter" in k.lower() for k in claves), claves
+
+
+def test_raiz_muestra_la_landing_con_boton_ingresar(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "Quiero el plan Completo" in html and 'href="/login"' in html
+    assert client.get("/static/css/landing.css").status_code == 200
+    assert client.get("/static/js/landing.js").status_code == 200

@@ -224,6 +224,7 @@ a { color: inherit; }
 }
 .header__link:hover { background: var(--color-primary-soft); color: var(--color-primary); }
 .header__cta { display: none; }
+.header__ingresar { padding-inline: 0.85rem; }
 
 .header__toggle {
   display: grid; place-content: center; gap: 5px;
