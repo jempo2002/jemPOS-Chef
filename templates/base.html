@@ -6,41 +6,7 @@
   {% block scripts %}{% endblock %}
 </head>
 <body>
-  <header class="barra">
-    <a class="marca" href="{{ url_for('core.inicio') }}">jemPOS <span>Chef</span></a>
-    <nav class="barra__nav" aria-label="Principal">
-      {% if usuario.rol == 'Master' %}
-        <a href="{{ url_for('master.panel') }}">Restaurantes</a>
-      {% else %}
-        <a href="{{ url_for('core.inicio') }}">Inicio</a>
-        {% if usuario.rol in ('Admin', 'Cajero', 'Mesero') %}<a href="{{ url_for('salon.mesas_page') }}">Mesas</a>{% endif %}
-        {% if usuario.rol in ('Admin', 'Cajero', 'Mesero') %}<a href="{{ url_for('domicilios.domicilios_page') }}">Domicilios</a>{% endif %}
-        {% if usuario.rol in ('Admin', 'Cocina') %}<a href="{{ url_for('salon.cocina_page') }}">Cocina</a>{% endif %}
-        {% if usuario.rol in ('Admin', 'Cajero') %}<a href="{{ url_for('salon.caja_page') }}">Caja</a>{% endif %}
-        {% if usuario.rol == 'Admin' %}
-          <a href="{{ url_for('salon.carta_page') }}">Carta</a>
-          <a href="{{ url_for('recetas.recetas_page') }}">Recetas</a>
-          <a href="{{ url_for('restaurante.sedes_page') }}">Sedes</a>
-          <a href="{{ url_for('restaurante.equipo_page') }}">Equipo</a>
-        {% endif %}
-      {% endif %}
-    </nav>
-    <div class="barra__usuario">
-      <button class="chip chip--cola" id="cola-estado" type="button" hidden></button>
-      {% if usuario.sede %}
-        {% if usuario.rol == 'Admin' %}
-          <a class="chip" href="{{ url_for('auth.seleccionar_sede') }}" title="Cambiar de sede">{{ usuario.sede }}</a>
-        {% else %}
-          <span class="chip">{{ usuario.sede }}</span>
-        {% endif %}
-      {% endif %}
-      <span class="muted">{{ usuario.nombre }} · {{ usuario.rol }}</span>
-      <form method="post" action="{{ url_for('auth.logout') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-        <button class="btn-link" type="submit">Salir</button>
-      </form>
-    </div>
-  </header>
+  {% include "_nav.html" %}
   {% if tienda_vencida %}
     <p class="banda banda--error">Tu suscripción venció. La cuenta queda en modo lectura hasta renovar.</p>
   {% elif dias_suscripcion is not none and dias_suscripcion <= 5 %}

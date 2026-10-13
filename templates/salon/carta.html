@@ -9,10 +9,12 @@
     {% for e in estaciones %}<option value="{{ e }}" {% if p and p.estacion == e %}selected{% endif %}>{{ {'cocina': 'Cocina', 'bar': 'Bar', 'ninguna': 'No se prepara'}[e] }}</option>{% endfor %}
   </select>
   <label class="check"><input type="checkbox" name="controla_stock" {% if p and p.controla_stock %}checked{% endif %} /> Lleva inventario</label>
+  <label class="check"><input type="checkbox" name="es_adicional" {% if p and p.es_adicional %}checked{% endif %} /> Es adicional</label>
 {% endmacro %}
 {% block content %}
 <h1>Carta</h1>
 <p class="muted">La carta es la misma en todas las sedes; el inventario es de cada sede. "Lleva inventario" es para lo que se compra hecho (gaseosas, cervezas) o se cuenta por unidad: se descuenta al enviar el pedido a cocina.</p>
+<p class="muted">"Es adicional" es para salsas y extras: no se piden solos, se le agregan a un plato al tomar el pedido. Su precio es lo que cuesta como adicional (pon 0 si va gratis). Con receta descuentan sus propios ingredientes.</p>
 
 <section class="tarjeta">
   <h2>Nuevo producto</h2>
@@ -28,7 +30,7 @@
     <tbody>
     {% for p in productos %}
       <tr>
-        <td><strong>{{ p.nombre }}</strong></td>
+        <td><strong>{{ p.nombre }}</strong>{% if p.es_adicional %} <small class="chip">Adicional</small>{% endif %}</td>
         <td>{{ p.categoria or '' }}</td>
         <td>{{ p.precio_venta|pesos }}</td>
         <td>{{ {'cocina': 'Cocina', 'bar': 'Bar', 'ninguna': 'No se prepara'}[p.estacion] }}</td>

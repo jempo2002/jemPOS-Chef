@@ -32,6 +32,9 @@
     <h2>Gastos del turno</h2>
     <form class="form form--fila" id="form-gasto" data-api="POST {{ url_for('salon.api_caja_gasto') }}">
       <label>Concepto <input name="concepto" maxlength="150" required placeholder="Ej. hielo, gas, domicilio" /></label>
+      <label>Categoría
+        <select name="categoria">{% for clave, texto in categorias.items() %}<option value="{{ clave }}"{{ ' selected' if clave == 'otros' }}>{{ texto }}</option>{% endfor %}</select>
+      </label>
       <label>Monto <input name="monto" id="gasto-monto" inputmode="numeric" required /></label>
       <label>Método de pago
         <select name="metodo" id="gasto-metodo">

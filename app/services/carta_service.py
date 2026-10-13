@@ -6,6 +6,11 @@ sigue en las ventas y pedidos viejos, y su receta queda guardada.
 
 Un plato con receta (es_preparado, recetas_service) no lleva inventario
 propio y su costo lo pone la receta.
+
+Un adicional (es_adicional: una salsa, un extra de queso) no se pide solo:
+se le agrega a un plato al tomar el pedido (pedidos_service). Su precio es lo
+que cobra como adicional (0 = gratis) y puede tener receta o inventario como
+cualquier producto. Sale en la comanda con la estacion de su plato.
 """
 from __future__ import annotations
 
@@ -29,6 +34,7 @@ def _campos(data: dict) -> dict:
         "precio_costo": round(parse_float(data.get("precio_costo") or 0, "El costo", min_value=0, max_value=PRECIO_MAX), 2),
         "estacion": estacion,
         "controla_stock": int(parse_bool(data.get("controla_stock") or False)),
+        "es_adicional": int(parse_bool(data.get("es_adicional") or False)),
     }
 
 
@@ -60,7 +66,7 @@ def listar(id_tienda: int, id_sede: int) -> list[dict]:
         cur = conn.cursor(dictionary=True)
         cur.execute(
             "SELECT p.id_producto, p.nombre, p.precio_venta, p.precio_costo, p.estacion, p.controla_stock, "
-            "p.es_preparado, c.nombre AS categoria, s.stock_actual "
+            "p.es_preparado, p.es_adicional, c.nombre AS categoria, s.stock_actual "
             "FROM productos p "
             "LEFT JOIN categorias c ON c.id_categoria = p.id_categoria "
             "LEFT JOIN stock_sedes s ON s.id_producto = p.id_producto AND s.id_sede = %s "
@@ -80,6 +86,7 @@ def listar(id_tienda: int, id_sede: int) -> list[dict]:
         f["precio_costo"] = float(f["precio_costo"])
         f["controla_stock"] = bool(f["controla_stock"])
         f["es_preparado"] = bool(f["es_preparado"])
+        f["es_adicional"] = bool(f["es_adicional"])
         f["stock_actual"] = float(f["stock_actual"] or 0) if f["controla_stock"] else None
         f["disponibles"] = disponibles.get(f["id_producto"])
     return filas
@@ -92,9 +99,10 @@ def crear(id_tienda: int, data: dict) -> int:
         cur = conn.cursor(dictionary=True)
         id_categoria = _id_categoria(cur, id_tienda, c["categoria"])
         cur.execute(
-            "INSERT INTO productos (id_tienda, id_categoria, nombre, precio_venta, precio_costo, estacion, controla_stock) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (id_tienda, id_categoria, c["nombre"], c["precio_venta"], c["precio_costo"], c["estacion"], c["controla_stock"]),
+            "INSERT INTO productos (id_tienda, id_categoria, nombre, precio_venta, precio_costo, estacion, controla_stock, "
+            "es_adicional) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (id_tienda, id_categoria, c["nombre"], c["precio_venta"], c["precio_costo"], c["estacion"], c["controla_stock"],
+             c["es_adicional"]),
         )
         id_producto = cur.lastrowid
         conn.commit()
@@ -128,8 +136,9 @@ def actualizar(id_tienda: int, id_producto: int, data: dict) -> None:
         id_categoria = _id_categoria(cur, id_tienda, c["categoria"])
         cur.execute(
             "UPDATE productos SET id_categoria = %s, nombre = %s, precio_venta = %s, precio_costo = %s, "
-            "estacion = %s, controla_stock = %s WHERE id_producto = %s",
-            (id_categoria, c["nombre"], c["precio_venta"], c["precio_costo"], c["estacion"], c["controla_stock"], id_producto),
+            "estacion = %s, controla_stock = %s, es_adicional = %s WHERE id_producto = %s",
+            (id_categoria, c["nombre"], c["precio_venta"], c["precio_costo"], c["estacion"], c["controla_stock"],
+             c["es_adicional"], id_producto),
         )
         conn.commit()
     except Exception:

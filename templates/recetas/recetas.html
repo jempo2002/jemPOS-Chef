@@ -98,13 +98,13 @@
 {% elif pestana == 'recetas' %}
 <section class="tarjeta">
   <h2>Platos</h2>
-  <p class="muted">Ponle receta a lo que se prepara. Lo que se compra hecho y lleva inventario propio (gaseosas, cervezas) no aparece aquí.</p>
+  <p class="muted">Ponle receta a lo que se prepara. Lo que se compra hecho y lleva inventario propio (gaseosas, cervezas) no aparece aquí. Las salsas y extras marcados como adicionales también llevan receta: descuentan sus ingredientes cuando se piden con un plato.</p>
   <table class="tabla tabla--tarjetas">
     <thead><tr><th>Plato</th><th>Ingredientes</th><th>Alcanza para</th><th>Costo</th><th></th></tr></thead>
     <tbody>
     {% for p in platos %}
       <tr>
-        <td data-th="Plato"><strong>{{ p.nombre }}</strong>{% if p.categoria %}<br><small class="muted">{{ p.categoria }}</small>{% endif %}</td>
+        <td data-th="Plato"><strong>{{ p.nombre }}</strong>{% if p.es_adicional %} <small class="chip">Adicional</small>{% endif %}{% if p.categoria %}<br><small class="muted">{{ p.categoria }}</small>{% endif %}</td>
         <td data-th="Ingredientes">{% if p.es_preparado %}{{ p.ingredientes }}{% else %}<span class="muted">Sin receta</span>{% endif %}</td>
         <td data-th="Alcanza para">{% if p.disponibles is not none %}<span class="{{ 'texto-peligro' if p.disponibles == 0 }}">{{ p.disponibles }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td data-th="Costo">{% if p.es_preparado %}{{ p.costo|pesos }}{% else %}<span class="muted">—</span>{% endif %}</td>
@@ -137,11 +137,11 @@
     <tbody>
     {% for p in costos.platos %}
       <tr class="{{ 'fila--alerta' if p.alerta }}">
-        <td data-th="Plato"><a href="{{ url_for('recetas.receta_page', id_producto=p.id_producto) }}"><strong>{{ p.nombre }}</strong></a></td>
+        <td data-th="Plato"><a href="{{ url_for('recetas.receta_page', id_producto=p.id_producto) }}"><strong>{{ p.nombre }}</strong></a>{% if p.es_adicional %} <small class="chip">Adicional</small>{% endif %}</td>
         <td data-th="Costo">{{ p.costo|pesos }}</td>
         <td data-th="Precio">{{ p.precio_venta|pesos }}</td>
         <td data-th="Utilidad">{{ p.utilidad|pesos }}</td>
-        <td data-th="% costo"><strong>{% if p.pct_costo is not none %}{{ p.pct_costo|numero(1) }} %{% else %}Sin precio{% endif %}</strong></td>
+        <td data-th="% costo"><strong>{% if p.pct_costo is not none %}{{ p.pct_costo|numero(1) }} %{% elif p.es_adicional %}Gratis{% else %}Sin precio{% endif %}</strong></td>
       </tr>
     {% else %}
       <tr><td colspan="5" class="muted">Ningún plato tiene receta todavía.</td></tr>

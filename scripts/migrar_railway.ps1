@@ -3,17 +3,21 @@
 #
 #   .\scripts\migrar_railway.ps1
 #   .\scripts\migrar_railway.ps1 -Nombre "Tu nombre" -Correo tu@correo.com
+#   .\scripts\migrar_railway.ps1 -Demo
 #
 # Usa la MYSQL_PUBLIC_URL del servicio MySQL en Railway (Variables >
 # MYSQL_PUBLIC_URL, la que tiene ...proxy.rlwy.net): la toma de la linea
 # MYSQL_PUBLIC_URL=... del .env local si esta, y si no la pide sin mostrarla.
 # Con -Nombre y -Correo crea ademas el usuario Master en esa misma base.
+# Con -Demo crea o actualiza el restaurante "Demo Chef" (scripts/crear_demo.py)
+# con admin, cajero, mesero y cocina @demo.chef; la contrasena la toma de
+# $env:DEMO_CLAVE o la pide.
 # Las credenciales de Railway solo viven en esta ventana mientras corre.
 #
 # Se puede correr varias veces: run_migration.py trata como hecho lo que ya
 # existe. Para antes de seguir si una migracion falla.
 
-param([string]$Nombre, [string]$Correo)
+param([string]$Nombre, [string]$Correo, [switch]$Demo)
 
 $ErrorActionPreference = "Stop"
 $raiz = Split-Path -Parent $PSScriptRoot
@@ -58,7 +62,11 @@ try {
         & $python scripts\crear_master.py $Nombre $Correo
         if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el usuario Master." }
     }
+    if ($Demo) {
+        & $python scripts\crear_demo.py
+        if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el restaurante demo." }
+    }
 }
 finally {
-    Remove-Item Env:DB_HOST, Env:DB_PORT, Env:DB_USER, Env:DB_PASSWORD, Env:DB_NAME -ErrorAction SilentlyContinue
+    Remove-Item Env:DB_HOST, Env:DB_PORT, Env:DB_USER, Env:DB_PASSWORD, Env:DB_NAME, Env:DEMO_CLAVE -ErrorAction SilentlyContinue
 }

@@ -101,7 +101,12 @@ def test_limite_de_intentos_de_login(client, crear):
 def test_suscripcion_vencida_queda_en_solo_lectura(client, crear, db):
     id_tienda, _ = crear.tienda("cadena")
     crear.usuario("admin@chef.co", "Admin", id_tienda)
-    db.cursor().execute("UPDATE tiendas SET trial_ends_at = CURDATE() WHERE id_tienda = %s", (id_tienda,))
+    # La fecha del restaurante (Colombia), no CURDATE(): esta conexion de
+    # prueba usa la hora del servidor (UTC), que de 7 p. m. a medianoche ya
+    # va en el dia siguiente.
+    from app.utils.helpers import hoy_local
+
+    db.cursor().execute("UPDATE tiendas SET trial_ends_at = %s WHERE id_tienda = %s", (hoy_local(), id_tienda))
     entrar(client, "admin@chef.co")
     assert client.get("/sedes").status_code == 200
     r = client.post("/api/sedes", json={"nombre": "Norte"})

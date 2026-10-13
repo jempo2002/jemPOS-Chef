@@ -38,7 +38,8 @@ def avatar_iniciales(nombre: str) -> str:
 
 def fmt_money(value: float) -> str:
     """Simple COP formatting for UI labels."""
-    return f"${int(round(value)):,}".replace(",", ".")
+    entero = int(round(value))
+    return f"{'-' if entero < 0 else ''}${abs(entero):,}".replace(",", ".")
 
 
 def fmt_numero(value, decimales: int = 3) -> str:

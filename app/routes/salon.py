@@ -16,8 +16,10 @@ from flask import Blueprint, g, jsonify, redirect, render_template, request, ses
 
 from app.services import (
     caja_service,
+    calificaciones_service,
     carta_service,
     cocina_service,
+    gastos_service,
     inventario_service,
     mesas_service,
     pedidos_service,
@@ -79,6 +81,7 @@ def pedido_page(id_mesa):
         puede_cobrar=session.get("rol") in CAJA,
         es_admin=session.get("rol") == "Admin",
         dividir=plan_service.tiene_funcion(g.plan_id, "cuenta_dividida"),
+        calificar=calificaciones_service.pedir_al_cobrar(session["id_tienda"]),
     )
 
 
@@ -104,7 +107,8 @@ def cocina_page():
 @login_required
 @roles_required(*CAJA)
 def caja_page():
-    return render_template("salon/caja.html", turno=caja_service.estado(g.id_sede))
+    return render_template("salon/caja.html", turno=caja_service.estado(g.id_sede),
+                           categorias=gastos_service.CATEGORIAS)
 
 
 @salon.get("/carta")
@@ -384,6 +388,7 @@ def llevar_page(uuid):
         puede_cobrar=session.get("rol") in CAJA,
         es_admin=session.get("rol") == "Admin",
         dividir=plan_service.tiene_funcion(g.plan_id, "cuenta_dividida"),
+        calificar=calificaciones_service.pedir_al_cobrar(session["id_tienda"]),
     )
 
 
