@@ -9,9 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" />
-  <link rel="stylesheet" href="css/landing.css" />
-  <script>document.documentElement.classList.add('js')</script>
-  <script src="js/landing.js" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}" />
+  <script src="{{ url_for('static', filename='js/landing-js.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/landing.js') }}" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#contenido">Saltar al contenido</a>
@@ -46,6 +46,7 @@
         <a class="header__link" href="#faq">Preguntas</a>
       </div>
 
+      <a class="btn btn--ghost btn--sm header__ingresar" href="{{ url_for('auth.login') }}">Ingresar</a>
       <a class="btn btn--primary btn--sm header__cta" href="#planes"><svg class="ico" aria-hidden="true"><use href="#i-regalo"/></svg> 1er mes gratis</a>
 
       <button class="header__toggle" type="button" aria-expanded="false" aria-controls="menu-principal" data-nav-toggle>
@@ -326,6 +327,7 @@
 
   <footer class="footer">
     <p>© jemPOS Chef · Una versión de <a href="https://github.com/jempo2002/jemPOS">jemPOS</a> para restaurantes.</p>
+    <p><a href="{{ url_for('auth.login') }}">Ingresar a mi restaurante</a></p>
   </footer>
 </body>
 </html>

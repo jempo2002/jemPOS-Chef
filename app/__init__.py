@@ -5,7 +5,7 @@ import os
 from datetime import timedelta
 
 from dotenv import load_dotenv
-from flask import Flask, flash, g, jsonify, redirect, request, session, url_for
+from flask import Flask, flash, g, jsonify, redirect, render_template, request, session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_session import Session
@@ -129,7 +129,8 @@ def create_app() -> Flask:
 
     @app.get("/")
     def index():
-        return redirect(url_for("auth.login"))
+        # Landing publica; el boton Ingresar lleva a /login.
+        return render_template("landing.html")
 
     @app.get("/health")
     def health() -> tuple[dict, int]:

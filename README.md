@@ -62,9 +62,9 @@ TEST_DB_USER=usuario TEST_DB_PASSWORD=clave TEST_REDIS_URL=redis://localhost:637
 
 ## Landing
 
-Sitio estático en `index.html`, `css/landing.css` y `js/landing.js`. Mismo lenguaje visual que el landing de jemPOS (Inter, tarjetas, sombras suaves, entrada escalonada, botón con brillo) con paleta naranja.
+Página pública en la raíz `/` de la app: `templates/landing.html`, `static/css/landing.css` y `static/js/landing.js`. El botón Ingresar lleva a `/login`. Mismo lenguaje visual que el landing de jemPOS (Inter, tarjetas, sombras suaves, entrada escalonada, botón con brillo) con paleta naranja.
 
-Para verlo: `python3 -m http.server 8000` y abrir http://localhost:8000.
+Para verlo: arrancar la app y abrir http://localhost:5000/.
 
 Precios: Básico $49.000, Completo $69.000, Cadena $99.000 al mes (sede extra al 50 % del plan, montaje $79.000); implementación $119.000 / $219.000 / $379.000.
 

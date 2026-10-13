@@ -1,7 +1,7 @@
 """Planes de suscripcion de Chef (tiendas.plan_id) y sus limites.
 
 Fuente unica de precios, topes y funciones por plan. Los precios son los del
-landing (index.html, seccion #planes), en COP por mes:
+landing (templates/landing.html, seccion #planes), en COP por mes:
 
   Basico   $49.000  mesas, propina, caja y turnos. Una sola sede.
   Completo $69.000  + pantalla de cocina, cuenta dividida, recetas, multisede
