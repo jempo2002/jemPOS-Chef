@@ -129,3 +129,8 @@ def test_raiz_muestra_la_landing_con_boton_ingresar(client):
     assert "Quiero el plan Completo" in html and 'href="/login"' in html
     assert client.get("/static/css/landing.css").status_code == 200
     assert client.get("/static/js/landing.js").status_code == 200
+
+
+def test_login_tiene_boton_volver_a_inicio(client):
+    html = client.get("/login").get_data(as_text=True)
+    assert 'class="volver"' in html and 'href="/"' in html

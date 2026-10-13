@@ -1,5 +1,12 @@
 {% extends "auth/_base_auth.html" %}
 {% block title %}Iniciar sesión{% endblock %}
+{% block volver %}
+{# Esquina superior izquierda: vuelve a la landing. Enlace normal (GET /). #}
+<a href="{{ url_for('index') }}" class="volver">
+  <svg class="volver__ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>
+  Volver a Inicio
+</a>
+{% endblock %}
 {% block content %}
 <h1>Iniciar sesión</h1>
 <p class="muted">Entra con el correo que te dio el administrador del restaurante.</p>
