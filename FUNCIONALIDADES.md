@@ -4,7 +4,7 @@ POS y contabilidad en la nube para restaurantes pequeños y medianos, versión d
 
 Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada vez que se integra una funcionalidad, utilidad o herramienta nueva.**
 
-- **Última actualización:** 13 de octubre de 2026
+- **Última actualización:** 6 de noviembre de 2026
 - **Estado de cada función:**
   - ✅ **En main**: aprobada y en la rama principal.
   - 🧪 **Solo en test**: hecha y probada en `test`, esperando aprobación para pasar a `main`.
@@ -22,21 +22,21 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 | Salón | Toma de pedidos y comandas a cocina | ✅ | Todos |
 | Salón | Pedidos para llevar | ✅ | Todos |
 | Salón | Domicilios y recaudo de domiciliarios | ✅ | Todos |
-| Salón | Adicionales (salsas, extras) | 🧪 | Todos |
+| Salón | Adicionales (salsas, extras) | ✅ | Todos |
 | Cocina | Pantalla de cocina y bar | ✅ | Completo, Cadena |
 | Caja | Turnos de caja, gastos, arqueo y Nequi | ✅ | Todos |
 | Caja | Cuenta dividida | ✅ | Completo, Cadena |
 | Caja | Pago Mixto | ✅ | Todos |
 | Inventario | Carta, stock por sede y kardex | ✅ | Todos |
 | Inventario | Recetas, insumos y costo por plato | ✅ | Completo, Cadena |
-| Administración | Reportes y contabilidad | 🧪 | Todos |
-| Administración | Calificación del servicio con QR | 🧪 | Todos |
+| Administración | Reportes y contabilidad | ✅ | Todos |
+| Administración | Calificación del servicio con QR | ✅ | Todos |
 | Administración | Sedes (multisede) | ✅ | Completo, Cadena |
 | Administración | Equipo (usuarios por rol) | ✅ | Todos |
 | Plataforma | Panel Master (alta de restaurantes, planes, pagos) | ✅ | — |
-| Interfaz | Menú móvil con barra inferior y hoja "Más" | 🧪 | Todos |
+| Interfaz | Menú móvil con barra inferior y hoja "Más" | ✅ | Todos |
 | Plataforma | Funcionamiento sin conexión (cola en el dispositivo) | ✅ | Todos |
-| Plataforma | Restaurante demo | ✅ (contraseña fija 🧪) | — |
+| Plataforma | Restaurante demo | ✅ | — |
 | Plataforma | Despliegue en Railway | ✅ | — |
 | Facturación | Factura electrónica DIAN | 📋 | Cadena |
 
@@ -91,7 +91,7 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 - Cambiar el método en el camino, reasignar domiciliario y "No lo entregó": solo Cajero y Admin, y quedan en auditoría.
 - Domiciliarios con borrado suave; no son usuarios ni gastan cupo del plan.
 
-### 3.5 Adicionales (salsas y extras) 🧪
+### 3.5 Adicionales (salsas y extras) ✅
 - Un producto se marca como **adicional**: no sale en la grilla de la carta, se agrega a un plato con el botón **+ Adicional**.
 - Precio propio como adicional (0 = gratis). Puede tener receta o inventario como cualquier producto.
 - Va amarrado a su plato: descuenta al enviar a cocina, sale en la comanda del plato, se cobra y entra a la venta con su costo. Anular el plato anula sus adicionales.
@@ -145,7 +145,7 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 
 ## 7. Administración
 
-### 7.1 Reportes y contabilidad 🧪 (solo Admin)
+### 7.1 Reportes y contabilidad ✅ (solo Admin)
 - Pantalla **Reportes** con pestañas **Resumen, Ventas, Gastos, Cierres de caja** y **Calificaciones**.
 - **Estado de resultados:** ventas, costo de lo vendido, utilidad bruta, gastos y utilidad neta, con comparación contra el periodo anterior.
 - Filtros por periodo y por sede (o todas las sedes).
@@ -153,7 +153,7 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 - **Gastos por categoría**, registrados en Caja o por el Admin fuera de la caja (arriendo, nómina). Un gasto no se borra, se anula con motivo, y no se puede fechar hacia atrás.
 - **Exportar a CSV** (ventas por producto, gastos, etc.).
 
-### 7.2 Calificación del servicio 🧪
+### 7.2 Calificación del servicio ✅
 - Al cobrar sale un **QR** (imprimible) y, si el pedido tiene teléfono, la opción de enviarlo por **WhatsApp**.
 - El cliente califica **comida y atención** de 1 a 5 con comentario opcional, sin cuenta, en una página pública. Una vez por pedido, hasta 3 días después del cobro.
 - En **Reportes › Calificaciones:** promedios, reparto de notas, resultados por mesero y por sede, porcentaje de pedidos calificados y comentarios.
@@ -191,7 +191,7 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 
 ## 10. Interfaz
 
-### 10.1 Menú móvil 🧪
+### 10.1 Menú móvil ✅
 - En celular y tablet: **barra fija abajo** con hasta 4 accesos según el rol, más un botón **Más** que abre una hoja con el resto (Operación, Administración, Cuenta).
 - En computador: barra arriba en una fila y menú de cuenta en el avatar.
 
@@ -201,8 +201,8 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 
 ## 11. Herramientas, demo y despliegue
 
-- **Restaurante demo** ✅: `scripts/crear_demo.py` crea "Demo Chef" con 10 mesas, carta, insumos, 4 recetas y un usuario por rol (`admin@`, `cajero@`, `mesero@`, `cocina@demo.chef`). 🧪 La contraseña de las cuentas demo queda fija y `migrar_railway.ps1 -Demo` la crea o repone en Railway.
-- **Migrar la base de Railway** ✅: `scripts/migrar_railway.ps1` aplica el esquema y todas las migraciones en orden; con `-Nombre` y `-Correo` crea el usuario Master.
+- **Restaurante demo** ✅: `scripts/crear_demo.py` crea "Demo Chef" con 10 mesas, carta, insumos, 4 recetas y un usuario por rol (`admin@`, `cajero@`, `mesero@`, `cocina@demo.chef`). La contraseña de las cuentas demo queda fija y `migrar_railway.ps1 -Demo` la crea o repone en Railway.
+- **Migrar la base de Railway** ✅: `scripts/migrar_railway.ps1` aplica el esquema y todas las migraciones en orden; con `-Nombre` y `-Correo` crea el usuario Master. Antes de migrar hace `git fetch` y se detiene si la copia local está atrasada (hay que hacer `git pull`). `python scripts/run_migration.py --todas` hace lo mismo desde Python.
 - **Crear Master** ✅: `scripts/crear_master.py`.
 - **Despliegue** ✅: Railway (app web + MySQL + Redis) en https://jempos-chef-production.up.railway.app, hoy desde la rama `test`. 📋 Pendiente: producción desde `main` y dominio con Cloudflare.
 - **Pruebas automáticas** ✅: pytest contra MariaDB y Redis reales, con pruebas por módulo (salón, recetas, cuenta dividida, domicilios, pago Mixto, reportes, adicionales, calificaciones, menú, sedes, planes, Master, login).
@@ -228,3 +228,4 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 | Fecha | Cambio |
 |---|---|
 | 2026-10-13 | Primera versión: todo lo que hay en `main` y `test` a esta fecha. |
+| 2026-11-06 | Adicionales, reportes y contabilidad, calificaciones, menú móvil y la contraseña fija del demo pasan a ✅ (ya están en `main` desde el PR #5). Arreglo de Domicilios con ONLY_FULL_GROUP_BY y `migrar_railway.ps1` que frena si la copia local está atrasada van a `main` en el PR de esta fecha. |

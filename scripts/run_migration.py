@@ -10,6 +10,11 @@ importar db/schema.sql completo, con su trigger.
 
     python scripts/run_migration.py db/schema.sql
     python scripts/run_migration.py migrations/2026-10-07_sedes_planes_roles.sql
+    python scripts/run_migration.py --todas   # schema.sql y todas las migraciones, en orden
+
+`--todas` es lo que corre Railway antes de cada despliegue (railway.json,
+preDeployCommand): asi la base nunca queda atras del codigo. Si una
+migracion falla, el despliegue no sigue y queda en linea la version anterior.
 
 Toma las credenciales del entorno, y las variables del shell tienen prioridad
 sobre el .env: para apuntar a otra base no hace falta tocar el .env local.
@@ -135,8 +140,20 @@ def main(ruta: str) -> int:
     return 0
 
 
+def todas() -> int:
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    carpeta = os.path.join(raiz, "migrations")
+    archivos = [os.path.join(raiz, "db", "schema.sql")] + [
+        os.path.join(carpeta, n) for n in sorted(os.listdir(carpeta)) if n.endswith(".sql")
+    ]
+    for ruta in archivos:
+        if main(ruta):
+            return 1
+    return 0
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print(__doc__)
         sys.exit(2)
-    sys.exit(main(sys.argv[1]))
+    sys.exit(todas() if sys.argv[1] == "--todas" else main(sys.argv[1]))

@@ -23,6 +23,18 @@ $ErrorActionPreference = "Stop"
 $raiz = Split-Path -Parent $PSScriptRoot
 Set-Location $raiz
 
+# Las migraciones salen de ESTA carpeta: si esta atrasada frente a GitHub, la
+# base de Railway queda atras del codigo desplegado y las pantallas que usan
+# columnas nuevas dan error 500 (paso el 2026-10-13). Se frena antes.
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $rama = (git rev-parse --abbrev-ref HEAD).Trim()
+    git fetch -q origin $rama
+    $atras = [int](git rev-list --count "HEAD..origin/$rama")
+    if ($atras -gt 0) {
+        throw "Tu copia de '$rama' esta $atras commit(s) atras de GitHub. Corre 'git pull' y vuelve a correr este script."
+    }
+}
+
 $url = ""
 if (Test-Path .env) {
     $linea = Get-Content .env | Where-Object { $_ -match '^\s*MYSQL_PUBLIC_URL\s*=' } | Select-Object -First 1

@@ -210,6 +210,10 @@ def _domiciliario_activo(cur, id_sede: int, id_domiciliario) -> dict:
 
 # Una fila por domicilio con su total (mismo redondeo por linea que la cuenta).
 # Siempre filtra por sede y estado: entra por idx_pedido_domicilios_recaudo.
+# Los totales de las lineas salen de una subconsulta agrupada por pedido, no
+# de un GROUP BY sobre todo el SELECT: con ONLY_FULL_GROUP_BY (activo por
+# defecto en MySQL 8, el de Railway) las columnas de p y m sin agrupar hacen
+# fallar la consulta con un error 500.
 _DOMICILIOS = (
     "SELECT d.id_pedido, p.uuid_cliente AS uuid, p.numero_llevar AS numero, p.cliente_nombre AS cliente, "
     "p.cliente_telefono AS telefono, p.estado AS estado_pedido, d.direccion, d.estado, d.metodo_pago, "
@@ -217,14 +221,19 @@ _DOMICILIOS = (
     "d.id_domiciliario, m.nombre AS domiciliario, d.despachado_en, "
     "TIMESTAMPDIFF(MINUTE, p.abierto_en, NOW()) AS minutos, "
     "TIMESTAMPDIFF(MINUTE, d.despachado_en, NOW()) AS minutos_en_calle, "
-    "COALESCE(SUM(ROUND(i.cantidad * i.precio_unitario)), 0) AS total, "
-    "COALESCE(SUM(i.estado = 'pendiente'), 0) AS sin_enviar, "
-    "COALESCE(SUM(i.estado = 'listo'), 0) AS listos, "
-    "COALESCE(SUM(i.estado IN ('enviado', 'listo')), 0) AS en_cocina "
+    "COALESCE(i.total, 0) AS total, COALESCE(i.sin_enviar, 0) AS sin_enviar, "
+    "COALESCE(i.listos, 0) AS listos, COALESCE(i.en_cocina, 0) AS en_cocina "
     "FROM pedido_domicilios d "
     "JOIN pedidos p ON p.id_pedido = d.id_pedido "
     "LEFT JOIN domiciliarios m ON m.id_domiciliario = d.id_domiciliario "
-    "LEFT JOIN pedido_items i ON i.id_pedido = d.id_pedido AND i.estado <> 'anulado' "
+    "LEFT JOIN ("
+    "  SELECT id_pedido, SUM(ROUND(cantidad * precio_unitario)) AS total, "
+    "  SUM(estado = 'pendiente') AS sin_enviar, SUM(estado = 'listo') AS listos, "
+    "  SUM(estado IN ('enviado', 'listo')) AS en_cocina "
+    "  FROM pedido_items WHERE estado <> 'anulado' AND id_pedido IN ("
+    "    SELECT id_pedido FROM pedido_domicilios WHERE estado IN ('por_despachar', 'despachado', 'entregado')) "
+    "  GROUP BY id_pedido"
+    ") i ON i.id_pedido = d.id_pedido "
 )
 
 
@@ -269,7 +278,7 @@ def listar(id_sede: int) -> dict:
         cur = conn.cursor(dictionary=True)
         cur.execute(
             _DOMICILIOS + "WHERE d.id_sede = %s AND d.estado IN ('por_despachar', 'despachado', 'entregado') "
-            "AND p.estado <> 'anulado' GROUP BY d.id_pedido ORDER BY d.id_pedido",
+            "AND p.estado <> 'anulado' ORDER BY d.id_pedido",
             (id_sede,),
         )
         domicilios = [_json_domicilio(f) for f in cur.fetchall()]
@@ -295,7 +304,7 @@ def efectivo_por_entregar(cur, id_sede: int, id_domiciliario: int) -> dict:
         "LEFT JOIN pedido_items i ON i.id_pedido = d.id_pedido AND i.estado <> 'anulado' "
         "WHERE d.id_sede = %s AND d.estado IN ('despachado', 'entregado') AND d.id_domiciliario = %s "
         "AND d.metodo_pago IN ('Efectivo', 'Mixto') AND p.estado IN ('abierto', 'por_cobrar') "
-        "GROUP BY d.id_pedido",
+        "GROUP BY d.id_pedido, d.metodo_pago, d.monto_efectivo",
         (id_sede, id_domiciliario),
     )
     filas = cur.fetchall()
@@ -314,7 +323,7 @@ def recaudo(id_tienda: int, id_sede: int) -> dict:
         tope = float((cur.fetchone() or {}).get("tope") or 0)
         cur.execute(
             _DOMICILIOS + "WHERE d.id_sede = %s AND d.estado IN ('despachado', 'entregado') "
-            "GROUP BY d.id_pedido ORDER BY d.despachado_en, d.id_pedido",
+            "ORDER BY d.despachado_en, d.id_pedido",
             (id_sede,),
         )
         en_calle = [_json_domicilio(f) for f in cur.fetchall()]
