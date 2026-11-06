@@ -74,6 +74,10 @@ def reportes_page():
                                                   filtro_estrellas=filtro))
         datos["ver"] = filtro
         datos["pedir_al_cobrar"] = calificaciones_service.pedir_al_cobrar(id_tienda)
+        # Lo pendiente y los enlaces no dependen del periodo, solo de la sede.
+        datos["por_atender"] = calificaciones_service.por_atender(id_tienda, f["ids"])
+        datos["enlaces_google"] = calificaciones_service.enlaces_google(id_tienda, f["ids"])
+        datos["google_para_todos"] = calificaciones_service.GOOGLE_PARA_TODOS
     else:
         datos.update(reportes_service.cierres(id_tienda, f["ids"], f["periodo"]))
     # Los enlaces de pestanas y paginas conservan los filtros.

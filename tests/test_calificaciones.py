@@ -163,3 +163,94 @@ def test_vigencia_en_dias(app):
     assert calificaciones_service._vigente(ahora_local() - timedelta(days=2))
     assert not calificaciones_service._vigente(ahora_local() - timedelta(days=3, minutes=1))
     assert not calificaciones_service._vigente(None)
+
+
+GOOGLE = "https://g.page/r/CabcDEF123/review"
+
+
+def test_enlace_de_google_solo_a_dominios_de_google(app):
+    from app.services.calificaciones_service import limpiar_url_google
+
+    assert limpiar_url_google("") is None and limpiar_url_google("  ") is None
+    assert limpiar_url_google(GOOGLE) == GOOGLE
+    assert limpiar_url_google("g.page/r/CabcDEF123/review") == GOOGLE
+    ok = "https://search.google.com/local/writereview?placeid=ChIJ123"
+    assert limpiar_url_google(ok) == ok
+    assert limpiar_url_google("https://maps.app.goo.gl/AbC123") == "https://maps.app.goo.gl/AbC123"
+    for malo in ("http://g.page/r/x/review", "https://g.page.evil.co/r", "https://evilgoogle.com/x",
+                 "https://user@google.com/x", "https://google.com:8443/x", "javascript:alert(1)",
+                 'https://g.page/r/x"onclick=1', "https://g.page/" + "a" * 300):
+        try:
+            limpiar_url_google(malo)
+            raise AssertionError(malo)
+        except ValueError:
+            pass
+
+
+def _calificada(app, salon, comida, atencion, comentario=""):
+    id_pedido = _cobrada(salon)
+    _, token = _enlace(salon.cajero, id_pedido)
+    publico = app.test_client()
+    r = publico.post(f"/calificar/{token}", data={"comida": comida, "atencion": atencion, "comentario": comentario})
+    return publico, token, r.get_data(as_text=True)
+
+
+def test_buena_invita_a_google_y_cuenta_la_visita(app, salon, crear):
+    # Sin enlace de Google: solo las gracias.
+    r = salon.admin.post("/api/calificaciones/google", json={"id_sede": salon.sede, "url": "https://otro.com/x"})
+    assert r.status_code == 400
+    assert salon.cajero.post("/api/calificaciones/google", json={"id_sede": salon.sede, "url": GOOGLE}).status_code == 403
+    assert salon.admin.post("/api/calificaciones/google", json={"id_sede": salon.sede, "url": GOOGLE}).status_code == 200
+
+    publico, token, html = _calificada(app, salon, "5", "4", "Las hamburguesas, brutales")
+    assert "Dejar mi reseña en Google" in html and "brutales" in html
+    r = publico.get(f"/calificar/{token}/google")
+    assert r.status_code == 302 and r.headers["Location"] == GOOGLE
+    primera = crear.fila("SELECT google_en FROM calificaciones")["google_en"]
+    assert primera is not None
+    publico.get(f"/calificar/{token}/google")  # otra vez: no cambia la primera fecha
+    assert crear.fila("SELECT google_en FROM calificaciones")["google_en"] == primera
+
+    from app.services import calificaciones_service, reportes_service
+    with app.app_context():
+        c = calificaciones_service.resumen(salon.id_tienda, [salon.sede], reportes_service.periodo("hoy"))
+    assert c["buenas"] == 1 and c["a_google"] == 1
+    assert "Fue a Google" in salon.admin.get("/reportes?pestana=calificaciones").get_data(as_text=True)
+
+    # Token falso o sin calificar: no lleva a Google.
+    assert publico.get("/calificar/" + "b" * 32 + "/google").headers["Location"].endswith("/calificar/" + "b" * 32)
+
+    # Quitar el enlace: ya no hay boton.
+    assert salon.admin.post("/api/calificaciones/google", json={"id_sede": salon.sede, "url": ""}).status_code == 200
+    assert "Dejar mi reseña en Google" not in publico.get(f"/calificar/{token}").get_data(as_text=True)
+
+
+def test_mala_llega_al_dueno_y_se_atiende(app, salon, crear, db):
+    salon.admin.post("/api/calificaciones/google", json={"id_sede": salon.sede, "url": GOOGLE})
+    publico, token, html = _calificada(app, salon, "5", "3", "Nos atendieron tarde")
+    db.cursor().execute("UPDATE pedidos SET cliente_nombre = 'Marta Ruiz', cliente_telefono = '3105551234'")
+    assert "Dejar mi reseña en Google" not in html
+    assert "le llegó directo al dueño" in html and "opinar en Google" in html
+
+    inicio = salon.admin.get("/inicio").get_data(as_text=True)
+    assert "Un cliente calificó mal su visita" in inicio
+    assert "calificó mal" not in salon.cajero.get("/inicio").get_data(as_text=True)
+
+    pagina = salon.admin.get("/reportes?pestana=calificaciones").get_data(as_text=True)
+    assert "Nos atendieron tarde" in pagina and "https://wa.me/573105551234?text=Hola%20Marta" in pagina
+
+    id_calif = crear.fila("SELECT id_calificacion FROM calificaciones")["id_calificacion"]
+    url = f"/api/calificaciones/{id_calif}/atendida"
+    assert salon.cajero.post(url, json={}).status_code == 403
+    assert salon.admin.post(url, json={"nota": "Le dimos un postre"}).status_code == 200
+    assert salon.admin.post(url, json={}).status_code == 409
+    assert "calificó mal" not in salon.admin.get("/inicio").get_data(as_text=True)
+    pagina = salon.admin.get("/reportes?pestana=calificaciones").get_data(as_text=True)
+    assert "Nada pendiente" in pagina and "Le dimos un postre" in pagina
+
+    # Otro restaurante no la alcanza.
+    otra, sedes_otra = crear.tienda(nombre="Otro")
+    crear.usuario("admin2@chef.co", "Admin", otra, None)
+    cliente = app.test_client()
+    entrar(cliente, "admin2@chef.co")
+    assert cliente.post(url, json={}).status_code in (404, 409)

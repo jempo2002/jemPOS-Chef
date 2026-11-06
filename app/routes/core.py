@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, g, redirect, render_template, session, url_for
 
-from app.services import plan_service
+from app.services import calificaciones_service, plan_service
 from app.utils.decorators import login_required
 
 core = Blueprint("core", __name__)
@@ -23,4 +23,7 @@ def inicio():
         plan=plan,
         funciones=funciones,
         nombre_sede=session.get("nombre_sede"),
+        # Las calificaciones bajas le llegan solo al dueno: se las recuerda aqui.
+        por_atender=(calificaciones_service.cuantas_por_atender(
+            session["id_tienda"], None if g.sede_fija is None else [g.sede_fija]) if session.get("rol") == "Admin" else 0),
     )

@@ -38,7 +38,22 @@
         <h1>¡Gracias por calificarnos!</h1>
         <p>Comida {{ mostrar(info.comida) }}</p>
         <p>Atención {{ mostrar(info.atencion) }}</p>
-        <p class="muted">Tu opinión nos ayuda a mejorar.</p>
+        {% if info.buena %}
+          {% if info.google %}
+          <div class="calificar__google">
+            <p><strong>¡Qué bueno que te gustó!</strong> ¿Nos ayudas contándolo en Google? Así más gente nos conoce. Toma menos de un minuto.</p>
+            {% if info.comentario %}<p class="muted calificar__cita">Puedes usar lo que nos escribiste: “{{ info.comentario }}”</p>{% endif %}
+            <a class="btn btn--primario" href="{{ url_for('calificaciones.ir_a_google', token=token) }}" rel="noopener noreferrer">Dejar mi reseña en Google</a>
+          </div>
+          {% else %}
+          <p class="muted">Tu opinión nos ayuda a mejorar.</p>
+          {% endif %}
+        {% else %}
+          <p>Sentimos que no todo saliera bien. Tu calificación le llegó directo al dueño del restaurante y la va a usar para mejorar.</p>
+          {% if google_para_todos and info.google %}
+          <p class="muted calificar__otro"><small>Si quieres, también puedes <a href="{{ url_for('calificaciones.ir_a_google', token=token) }}" rel="noopener noreferrer">opinar en Google</a>.</small></p>
+          {% endif %}
+        {% endif %}
       {% elif info.estado == 'vencida' %}
         <h1>Este enlace ya venció</h1>
         <p class="muted">Gracias por visitarnos. Te esperamos pronto.</p>

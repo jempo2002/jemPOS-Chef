@@ -1,9 +1,12 @@
 """Calificacion del servicio.
 
   /calificar/<token>                     publica: el cliente califica (sin cuenta)
+  /calificar/<token>/google              publica: anota la visita y lleva a Google
   POST /api/pedidos/<id>/calificacion    Mesero, Cajero, Admin: enlace y QR del pedido cobrado
   POST /api/calificaciones/<id>/ocultar  Admin: deja de contar (borrado suave)
+  POST /api/calificaciones/<id>/atendida Admin: una calificacion baja ya se atendio
   POST /api/calificaciones/ajustes       Admin: mostrar o no el QR al cobrar
+  POST /api/calificaciones/google        Admin: enlace de resenas de Google de una sede
 
 La pagina publica no usa sesion ni CSRF: el token del enlace es lo que
 autoriza, y quien lo tiene ya puede calificar. Sin sesion tampoco se crea una
@@ -11,10 +14,8 @@ sesion en Redis por cada cliente que abre el enlace.
 """
 from __future__ import annotations
 
-from urllib.parse import quote
-
 import segno
-from flask import Blueprint, g, jsonify, render_template, request, session, url_for
+from flask import Blueprint, g, jsonify, redirect, render_template, request, session, url_for
 
 from app import csrf, limiter
 from app.services import calificaciones_service
@@ -53,8 +54,19 @@ def calificar_page(token):
         enviado=enviado,
         estrellas=calificaciones_service.ESTRELLAS,
         maximo=calificaciones_service.COMENTARIO_MAX,
+        google_para_todos=calificaciones_service.GOOGLE_PARA_TODOS,
+        token=token,
     )
     return respuesta, 404 if info is None else 200
+
+
+@calificaciones.get("/calificar/<token>/google")
+@limiter.limit("30 per minute")
+def ir_a_google(token):
+    url = calificaciones_service.ir_a_google(token)
+    if not url:
+        return redirect(url_for("calificaciones.calificar_page", token=token))
+    return redirect(url)
 
 
 # --- equipo ------------------------------------------------------------------------
@@ -69,13 +81,9 @@ def api_enlace(id_pedido):
         return _error(exc)
     url = url_for("calificaciones.calificar_page", token=datos["token"], _external=True)
     qr = segno.make(url, error="m").svg_data_uri(scale=6, border=2, dark="#120f0d")
-    whatsapp = ""
-    telefono = "".join(c for c in datos["telefono"] if c.isdigit())
-    if len(telefono) == 10:  # celular colombiano sin indicativo
-        telefono = "57" + telefono
-    if len(telefono) >= 11:
-        texto = f"¡Gracias por tu pedido! ¿Cómo te fue? Califica la comida y la atención aquí: {url}"
-        whatsapp = f"https://wa.me/{telefono}?text={quote(texto)}"
+    whatsapp = calificaciones_service.enlace_whatsapp(
+        datos["telefono"], f"¡Gracias por tu pedido! ¿Cómo te fue? Califica la comida y la atención aquí: {url}"
+    )
     return jsonify({
         "ok": True,
         "url": url,
@@ -97,6 +105,35 @@ def api_ocultar(id_calificacion):
     except _ERRORES as exc:
         return _error(exc)
     return jsonify({"ok": True, "msg": "Calificación oculta. Ya no cuenta en los promedios."})
+
+
+@calificaciones.post("/api/calificaciones/<int:id_calificacion>/atendida")
+@login_required
+@roles_required("Admin")
+def api_atendida(id_calificacion):
+    permitidas = None if g.sede_fija is None else [g.sede_fija]
+    try:
+        calificaciones_service.marcar_atendida(session["id_tienda"], session["id_usuario"], id_calificacion,
+                                               request.get_json(silent=True) or {}, permitidas)
+    except _ERRORES as exc:
+        return _error(exc)
+    return jsonify({"ok": True, "msg": "Listo: marcada como atendida."})
+
+
+@calificaciones.post("/api/calificaciones/google")
+@login_required
+@roles_required("Admin")
+def api_google():
+    data = request.get_json(silent=True) or {}
+    permitidas = None if g.sede_fija is None else [g.sede_fija]
+    try:
+        con_enlace = calificaciones_service.guardar_google(session["id_tienda"], data.get("id_sede"), data.get("url"),
+                                                           permitidas)
+    except _ERRORES as exc:
+        return _error(exc)
+    msg = ("Listo: los clientes contentos verán el botón para dejar su reseña en Google." if con_enlace
+           else "Listo: se quitó el enlace de Google de esta sede.")
+    return jsonify({"ok": True, "msg": msg})
 
 
 @calificaciones.post("/api/calificaciones/ajustes")

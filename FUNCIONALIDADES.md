@@ -31,6 +31,7 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 | Inventario | Recetas, insumos y costo por plato | ✅ | Completo, Cadena |
 | Administración | Reportes y contabilidad | ✅ | Todos |
 | Administración | Calificación del servicio con QR | ✅ | Todos |
+| Administración | Reseñas buenas a Google, malas solo al dueño | 🧪 | Todos |
 | Administración | Sedes (multisede) | ✅ | Completo, Cadena |
 | Administración | Equipo (usuarios por rol) | ✅ | Todos |
 | Plataforma | Panel Master (alta de restaurantes, planes, pagos) | ✅ | — |
@@ -159,6 +160,13 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 - En **Reportes › Calificaciones:** promedios, reparto de notas, resultados por mesero y por sede, porcentaje de pedidos calificados y comentarios.
 - El Admin puede ocultar una calificación con motivo y apagar el QR al cobrar.
 
+### 7.2.1 Reseñas buenas a Google, malas solo al dueño 🧪
+- Cada sede guarda su **enlace para pedir reseñas de Google** (Reportes › Calificaciones › Reseñas en Google). Solo se aceptan enlaces `https` de dominios de Google (`g.page`, `google.com`, `goo.gl`…).
+- **Calificación buena** (4 o 5 ★ en comida y en atención): al enviar, el cliente ve un botón grande **Dejar mi reseña en Google**, con su comentario a la vista para reutilizarlo. Chef cuenta cuántos fueron a Google.
+- **Calificación baja** (menos de 4 ★ en algo): el cliente ve que su opinión le llegó al dueño y solo un enlace pequeño a Google. No se publica en ningún lado.
+- El dueño ve las bajas en **Por atender** (arriba de Reportes › Calificaciones) con el comentario, la mesa, el mesero y el teléfono del pedido, un botón **Escribirle por WhatsApp** con un mensaje de disculpa listo, y **Marcar atendida** con una nota de qué se hizo. En **Inicio** le sale un aviso mientras haya alguna sin atender.
+- Google no permite pedir reseñas solo a los clientes contentos (puede borrar reseñas o suspender la ficha); por eso el enlace pequeño también se muestra en las bajas. Se cambia con `GOOGLE_PARA_TODOS` en `calificaciones_service.py`.
+
 ### 7.3 Sedes (multisede) ✅
 - Pantalla **Sedes** (Admin): crear, editar y eliminar (borrado lógico).
 - Básico: una sede. Completo y Cadena: hasta 4 sedes. Cada sede extra paga el 50 % del plan al mes ($34.500 en Completo, $49.500 en Cadena) y un montaje único de $79.000.
@@ -229,3 +237,4 @@ Este documento lista todo lo que hace la aplicación hoy. **Se actualiza cada ve
 |---|---|
 | 2026-10-13 | Primera versión: todo lo que hay en `main` y `test` a esta fecha. |
 | 2026-11-06 | Adicionales, reportes y contabilidad, calificaciones, menú móvil y la contraseña fija del demo pasan a ✅ (ya están en `main` desde el PR #5). Arreglo de Domicilios con ONLY_FULL_GROUP_BY y `migrar_railway.ps1` que frena si la copia local está atrasada van a `main` en el PR de esta fecha. |
+| 2026-11-06 | Reseñas buenas a Google y malas solo al dueño (🧪, migración `2026-11-06_resenas_google.sql`). |

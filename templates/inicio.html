@@ -3,6 +3,13 @@
 {% block content %}
 <h1>Hola, {{ usuario.nombre.split(' ')[0] }}</h1>
 <p class="muted">{% if nombre_sede %}Estás en la sede {{ nombre_sede }}. {% endif %}Tu restaurante tiene el Plan {{ plan.nombre }}.</p>
+{% if por_atender %}
+<p class="aviso aviso--error">
+  {% if por_atender == 1 %}Un cliente calificó mal su visita y está esperando respuesta.{% else %}{{ por_atender }} clientes calificaron mal su visita y están esperando respuesta.{% endif %}
+  Solo tú lo ves.
+  <a href="{{ url_for('reportes.reportes_page', pestana='calificaciones') }}#por-atender">Ver y responder</a>
+</p>
+{% endif %}
 <section class="tarjeta">
   <h2>Lo que incluye tu plan</h2>
   <ul class="funciones">

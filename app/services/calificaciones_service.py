@@ -7,9 +7,19 @@ Flujo:
   2. El cliente abre /calificar/<token> sin cuenta y pone de 1 a 5 estrellas
      a la comida y a la atencion, con un comentario opcional. Una sola vez
      por pedido y hasta VIGENCIA_DIAS despues de cerrado.
-  3. El Admin ve promedios, reparto de estrellas, promedios por mesero y
+  3. Al enviar, una calificacion buena (es_buena: 4 o 5 en comida y en
+     atencion) invita al cliente a contarlo en Google con un boton grande,
+     si la sede tiene su enlace de resenas de Google. Una baja se queda en
+     Chef: le llega solo al dueno, en "Por atender" (Reportes y Inicio).
+  4. El Admin ve promedios, reparto de estrellas, promedios por mesero y
      comentarios en Reportes > Calificaciones. Puede ocultar una calificacion
-     (borrado suave, con motivo): deja de contar pero no se borra.
+     (borrado suave, con motivo): deja de contar pero no se borra. Las bajas
+     las marca atendidas cuando ya hablo con el cliente.
+
+Google prohibe pedir resenas solo a los clientes contentos ("review
+gating"): puede borrar resenas o suspender la ficha. Por eso, con
+GOOGLE_PARA_TODOS, al cliente de una calificacion baja tambien se le deja un
+enlace discreto a Google, despues de decirle que el dueno ya lo leyo.
 
 El token es lo unico que autoriza a calificar: 24 bytes al azar (192 bits),
 imposible de adivinar. Un pedido de otra sede o de otra tienda nunca se
@@ -20,16 +30,63 @@ from __future__ import annotations
 import re
 import secrets
 from datetime import timedelta
+from urllib.parse import quote, urlsplit
 
 from app.services.errores import Conflicto, NoEncontrado
 from app.utils.helpers import ahora_local
-from app.utils.validation import parse_int, sanitize_text
+from app.utils.validation import parse_int, sanitize_optional_text, sanitize_text
 from database import get_db
 
 VIGENCIA_DIAS = 3
 COMENTARIO_MAX = 500
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{32}$")
 ESTRELLAS = (5, 4, 3, 2, 1)
+# Buena = esta nota o mas en comida y en atencion.
+BUENA_DESDE = 4
+# Calificacion baja: tambien ve un enlace (discreto) a Google. Ver arriba.
+GOOGLE_PARA_TODOS = True
+GOOGLE_URL_MAX = 300
+# Hosts del enlace "Pedir resenas" de Google Business (g.page/r/.../review,
+# search.google.com/local/writereview?placeid=..., maps.app.goo.gl/...).
+_HOSTS_GOOGLE = ("g.page", "google.com", "google.com.co", "goo.gl")
+
+
+def es_buena(comida, atencion) -> bool:
+    return comida is not None and atencion is not None and min(int(comida), int(atencion)) >= BUENA_DESDE
+
+
+def _sql_baja(alias: str = "c") -> str:
+    return f"({alias}.comida < {BUENA_DESDE} OR {alias}.atencion < {BUENA_DESDE})"
+
+
+def enlace_whatsapp(telefono: str | None, texto: str) -> str:
+    """wa.me con el texto, o '' si el telefono no sirve. Un celular
+    colombiano de 10 digitos se completa con el 57."""
+    digitos = "".join(c for c in (telefono or "") if c.isdigit())
+    if len(digitos) == 10:
+        digitos = "57" + digitos
+    if len(digitos) < 11:
+        return ""
+    return f"https://wa.me/{digitos}?text={quote(texto)}"
+
+
+def limpiar_url_google(valor) -> str | None:
+    """Enlace de resenas de Google de una sede: vacio (None) o https a un
+    dominio de Google. Asi el boton del cliente nunca lleva a otro sitio."""
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    if len(texto) > GOOGLE_URL_MAX:
+        raise ValueError(f"El enlace de Google no puede superar {GOOGLE_URL_MAX} caracteres.")
+    if not texto.lower().startswith(("http://", "https://")):
+        texto = "https://" + texto
+    partes = urlsplit(texto)
+    host = (partes.hostname or "").lower()
+    if (partes.scheme.lower() != "https" or partes.username or partes.password or partes.port
+            or not any(host == h or host.endswith("." + h) for h in _HOSTS_GOOGLE)
+            or re.search(r"[\s<>\"']", texto)):
+        raise ValueError("Pega el enlace para pedir reseñas que da Google (empieza por https://g.page/ o https://search.google.com/).")
+    return texto
 
 
 def _lugar(f: dict) -> str:
@@ -118,7 +175,8 @@ def por_token(token: str) -> dict | None:
         cur = conn.cursor(dictionary=True)
         cur.execute(
             "SELECT c.id_calificacion, c.comida, c.atencion, c.calificada_en, c.estado_activo, "
-            "p.cerrado_en, p.tipo, p.numero_llevar, m.nombre AS mesa, t.nombre_negocio, s.nombre AS sede, "
+            "c.comentario, p.cerrado_en, p.tipo, p.numero_llevar, m.nombre AS mesa, t.nombre_negocio, s.nombre AS sede, "
+            "s.google_resenas_url, "
             "(SELECT COUNT(*) FROM sedes x WHERE x.id_tienda = c.id_tienda AND x.estado = 'Activa') AS num_sedes "
             "FROM calificaciones c JOIN pedidos p ON p.id_pedido = c.id_pedido "
             "LEFT JOIN mesas m ON m.id_mesa = p.id_mesa "
@@ -144,7 +202,40 @@ def por_token(token: str) -> dict | None:
         "lugar": _lugar(f),
         "comida": f["comida"],
         "atencion": f["atencion"],
+        "comentario": f["comentario"] or "",
+        "buena": es_buena(f["comida"], f["atencion"]),
+        # Solo se muestra cuando ya califico: el boton de Google va despues.
+        "google": bool(f["google_resenas_url"]) and estado == "hecha",
     }
+
+
+def ir_a_google(token: str) -> str | None:
+    """Enlace de Google de la sede del pedido, si ya califico. Anota la
+    primera vez que el cliente fue (para contar cuantos se mandaron)."""
+    if not _TOKEN.match(token or ""):
+        return None
+    conn = get_db()
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT c.id_calificacion, c.comida, c.atencion, c.calificada_en, c.google_en, s.google_resenas_url "
+            "FROM calificaciones c JOIN sedes s ON s.id_sede = c.id_sede WHERE c.token = %s",
+            (token,),
+        )
+        f = cur.fetchone()
+        if not f or f["calificada_en"] is None or not f["google_resenas_url"]:
+            return None
+        if not GOOGLE_PARA_TODOS and not es_buena(f["comida"], f["atencion"]):
+            return None
+        if f["google_en"] is None:
+            cur.execute(
+                "UPDATE calificaciones SET google_en = %s WHERE id_calificacion = %s AND google_en IS NULL",
+                (ahora_local(), f["id_calificacion"]),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+    return f["google_resenas_url"]
 
 
 def _estrellas(valor, campo: str) -> int:
@@ -218,7 +309,8 @@ def resumen(id_tienda: int, ids: list[int], per: dict) -> dict:
         cur = conn.cursor(dictionary=True)
         cur.execute(
             f"SELECT COUNT(*) AS n, AVG(c.comida) AS comida, AVG(c.atencion) AS atencion, "
-            f"SUM(c.comentario IS NOT NULL) AS comentarios FROM calificaciones c {donde}",
+            f"SUM(c.comentario IS NOT NULL) AS comentarios, SUM(NOT {_sql_baja()}) AS buenas, "
+            f"SUM(c.google_en IS NOT NULL) AS a_google FROM calificaciones c {donde}",
             base,
         )
         tot = cur.fetchone()
@@ -271,6 +363,8 @@ def resumen(id_tienda: int, ids: list[int], per: dict) -> dict:
         "comida": _promedio(tot["comida"]),
         "atencion": _promedio(tot["atencion"]),
         "comentarios": int(tot["comentarios"] or 0),
+        "buenas": int(tot["buenas"] or 0),
+        "a_google": int(tot["a_google"] or 0),
         "reparto_comida": _barras(reparto["comida"]),
         "reparto_atencion": _barras(reparto["atencion"]),
         "meseros": [_fila(f) for f in meseros],
@@ -283,14 +377,15 @@ def resumen(id_tienda: int, ids: list[int], per: dict) -> dict:
 
 def lista(id_tienda: int, ids: list[int], per: dict, pagina, por_pagina: int = 30, filtro_estrellas=None) -> dict:
     """Calificaciones del periodo, la mas nueva primero, ocultas incluidas.
-    filtro_estrellas 'bajas' deja solo las que tienen 1 o 2 en algo."""
+    filtro_estrellas 'bajas' deja solo las que no son buenas (menos de
+    BUENA_DESDE en algo)."""
     from app.services.reportes_service import _paginar
 
     filtro, params = _en_sedes("c.id_sede", ids)
     donde = "WHERE c.id_tienda = %s AND c.calificada_en >= %s AND c.calificada_en < %s" + filtro
     base = (id_tienda, per["inicio"], per["fin"]) + params
     if filtro_estrellas == "bajas":
-        donde += " AND (c.comida <= 2 OR c.atencion <= 2)"
+        donde += " AND " + _sql_baja()
     elif filtro_estrellas == "comentarios":
         donde += " AND c.comentario IS NOT NULL"
     conn = get_db()
@@ -300,7 +395,8 @@ def lista(id_tienda: int, ids: list[int], per: dict, pagina, por_pagina: int = 3
         pag = _paginar(pagina, int(cur.fetchone()["n"]), por_pagina)
         cur.execute(
             "SELECT c.id_calificacion, c.comida, c.atencion, c.comentario, c.calificada_en, c.estado_activo, "
-            "c.motivo_oculta, p.tipo, p.numero_llevar, m.nombre AS mesa, s.nombre AS sede, "
+            "c.motivo_oculta, c.google_en, c.atendida_en, c.nota_atendida, "
+            "p.tipo, p.numero_llevar, m.nombre AS mesa, s.nombre AS sede, "
             "u.nombre_completo AS mesero FROM calificaciones c JOIN pedidos p ON p.id_pedido = c.id_pedido "
             "LEFT JOIN mesas m ON m.id_mesa = p.id_mesa LEFT JOIN sedes s ON s.id_sede = c.id_sede "
             f"LEFT JOIN usuarios u ON u.id_usuario = c.id_mesero {donde} "
@@ -322,6 +418,10 @@ def lista(id_tienda: int, ids: list[int], per: dict, pagina, por_pagina: int = 3
             "mesero": f["mesero"] or "",
             "activa": bool(f["estado_activo"]),
             "motivo_oculta": f["motivo_oculta"] or "",
+            "buena": es_buena(f["comida"], f["atencion"]),
+            "a_google": f["google_en"] is not None,
+            "atendida": f["atendida_en"] is not None,
+            "nota_atendida": f["nota_atendida"] or "",
         } for f in filas],
         "paginacion": pag,
     }
@@ -356,3 +456,132 @@ def ocultar(id_tienda: int, id_usuario: int, id_calificacion: int, data: dict, s
         raise
     finally:
         conn.close()
+
+
+# --- bajas: solo al dueno ----------------------------------------------------------
+
+def _donde_por_atender(ids: list[int] | None) -> tuple[str, tuple]:
+    """ids None = todas las sedes del restaurante."""
+    filtro, params = ("", ()) if ids is None else _en_sedes("c.id_sede", ids)
+    return ("WHERE c.id_tienda = %s AND c.estado_activo = 1 AND c.calificada_en IS NOT NULL "
+            "AND c.atendida_en IS NULL AND " + _sql_baja() + filtro), params
+
+
+def cuantas_por_atender(id_tienda: int, ids: list[int] | None = None) -> int:
+    donde, params = _donde_por_atender(ids)
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"SELECT COUNT(*) FROM calificaciones c {donde}", (id_tienda,) + params)
+        return int(cur.fetchone()[0])
+    finally:
+        conn.close()
+
+
+def por_atender(id_tienda: int, ids: list[int], limite: int = 50) -> list[dict]:
+    """Calificaciones bajas sin atender (de cualquier fecha, la mas vieja
+    primero), con el telefono del pedido para escribirle al cliente."""
+    donde, params = _donde_por_atender(ids)
+    conn = get_db()
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT c.id_calificacion, c.comida, c.atencion, c.comentario, c.calificada_en, "
+            "p.tipo, p.numero_llevar, p.cliente_nombre, p.cliente_telefono, m.nombre AS mesa, s.nombre AS sede, "
+            "u.nombre_completo AS mesero, t.nombre_negocio FROM calificaciones c "
+            "JOIN pedidos p ON p.id_pedido = c.id_pedido LEFT JOIN mesas m ON m.id_mesa = p.id_mesa "
+            "LEFT JOIN sedes s ON s.id_sede = c.id_sede LEFT JOIN usuarios u ON u.id_usuario = c.id_mesero "
+            f"JOIN tiendas t ON t.id_tienda = c.id_tienda {donde} "
+            "ORDER BY c.calificada_en, c.id_calificacion LIMIT %s",
+            (id_tienda,) + params + (limite,),
+        )
+        filas = cur.fetchall()
+    finally:
+        conn.close()
+    resultado = []
+    for f in filas:
+        nombre = (f["cliente_nombre"] or "").split(" ")[0]
+        texto = (f"Hola{(' ' + nombre) if nombre else ''}, te escribimos de {f['nombre_negocio']}. "
+                 "Leímos tu calificación y lamentamos que no te haya ido bien. ¿Nos cuentas qué pasó? "
+                 "Queremos arreglarlo.")
+        resultado.append({
+            "id_calificacion": f["id_calificacion"],
+            "fecha": f["calificada_en"].strftime("%Y-%m-%d %H:%M"),
+            "comida": int(f["comida"]),
+            "atencion": int(f["atencion"]),
+            "comentario": f["comentario"] or "",
+            "lugar": _lugar(f),
+            "sede": f["sede"] or "",
+            "mesero": f["mesero"] or "",
+            "cliente": f["cliente_nombre"] or "",
+            "telefono": f["cliente_telefono"] or "",
+            "whatsapp": enlace_whatsapp(f["cliente_telefono"], texto),
+        })
+    return resultado
+
+
+def marcar_atendida(id_tienda: int, id_usuario: int, id_calificacion: int, data: dict, sedes_permitidas=None) -> None:
+    nota = sanitize_optional_text(data.get("nota"), "La nota", max_len=255)
+    conn = get_db()
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT id_sede, calificada_en, atendida_en FROM calificaciones "
+            "WHERE id_calificacion = %s AND id_tienda = %s FOR UPDATE",
+            (id_calificacion, id_tienda),
+        )
+        f = cur.fetchone()
+        if not f or f["calificada_en"] is None or (sedes_permitidas is not None and f["id_sede"] not in sedes_permitidas):
+            raise NoEncontrado("Calificación no encontrada.")
+        if f["atendida_en"] is not None:
+            raise Conflicto("Esta calificación ya estaba atendida.")
+        cur.execute(
+            "UPDATE calificaciones SET atendida_en = %s, atendida_por = %s, nota_atendida = %s WHERE id_calificacion = %s",
+            (ahora_local(), id_usuario, nota, id_calificacion),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# --- enlace de Google por sede -----------------------------------------------------
+
+def enlaces_google(id_tienda: int, ids: list[int]) -> list[dict]:
+    filtro, params = _en_sedes("id_sede", ids)
+    conn = get_db()
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT id_sede, nombre, google_resenas_url FROM sedes WHERE id_tienda = %s AND estado = 'Activa'"
+            + filtro + " ORDER BY es_principal DESC, nombre",
+            (id_tienda,) + params,
+        )
+        return [{"id_sede": f["id_sede"], "nombre": f["nombre"], "url": f["google_resenas_url"] or ""}
+                for f in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def guardar_google(id_tienda: int, id_sede, valor, sedes_permitidas=None) -> bool:
+    """Guarda (o borra, si viene vacio) el enlace de Google de una sede.
+    Devuelve si quedo con enlace."""
+    id_sede = parse_int(id_sede, "Sede", min_value=1)
+    url = limpiar_url_google(valor)
+    if sedes_permitidas is not None and id_sede not in sedes_permitidas:
+        raise NoEncontrado("Sede no encontrada.")
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM sedes WHERE id_sede = %s AND id_tienda = %s AND estado = 'Activa'", (id_sede, id_tienda)
+        )
+        if not cur.fetchone():
+            raise NoEncontrado("Sede no encontrada.")
+        cur.execute("UPDATE sedes SET google_resenas_url = %s WHERE id_sede = %s", (url, id_sede))
+        conn.commit()
+    finally:
+        conn.close()
+    return url is not None

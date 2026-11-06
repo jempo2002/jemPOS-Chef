@@ -275,6 +275,33 @@
 </section>
 
 {% elif pestana == 'calificaciones' %}
+<section class="tarjeta" id="por-atender">
+  <h2>Por atender</h2>
+  <p class="muted">Calificaciones con menos de 4 ★ en la comida o la atención. Le llegan solo a ti: no se publican en ningún lado. Escríbele al cliente, arregla lo que pasó y márcala como atendida.</p>
+  {% for x in por_atender %}
+  <article class="atender">
+    <div>
+      <p><span class="muted">Comida</span> <span class="estrellas-fijas" aria-label="{{ x.comida }} de 5">{{ '★' * x.comida }}<span>{{ '★' * (5 - x.comida) }}</span></span>
+         · <span class="muted">Atención</span> <span class="estrellas-fijas" aria-label="{{ x.atencion }} de 5">{{ '★' * x.atencion }}<span>{{ '★' * (5 - x.atencion) }}</span></span></p>
+      {% if x.comentario %}<p>“{{ x.comentario }}”</p>{% else %}<p class="muted">Sin comentario.</p>{% endif %}
+      <p><small class="muted">{{ x.fecha }} · {{ x.lugar }}{% if x.mesero %} · {{ x.mesero }}{% endif %}{% if sedes|length > 1 %} · {{ x.sede }}{% endif %}{% if x.cliente %} · {{ x.cliente }}{% endif %}{% if x.telefono %} · {{ x.telefono }}{% endif %}</small></p>
+    </div>
+    <div class="acciones">
+      {% if x.whatsapp %}<a class="btn" href="{{ x.whatsapp }}" target="_blank" rel="noopener noreferrer">Escribirle por WhatsApp</a>{% endif %}
+      <details>
+        <summary>Marcar atendida</summary>
+        <form class="form form--fila" data-api="POST {{ url_for('calificaciones.api_atendida', id_calificacion=x.id_calificacion) }}">
+          <input name="nota" maxlength="255" placeholder="Qué se hizo (opcional)" aria-label="Qué se hizo" />
+          <button class="btn btn--primario" type="submit">Atendida</button>
+        </form>
+      </details>
+    </div>
+  </article>
+  {% else %}
+  <p class="aviso aviso--ok">Nada pendiente. Ningún cliente está esperando respuesta.</p>
+  {% endfor %}
+</section>
+
 <section class="tarjeta">
   <div class="cifras cifras--kpi">
     <div><small>Comida</small><strong>{% if c.comida is not none %}{{ c.comida|numero(1) }} <span class="estrellas-fijas">★</span>{% else %}—{% endif %}</strong><small class="muted">Promedio de 1 a 5</small></div>
@@ -282,6 +309,8 @@
     <div><small>Calificaciones</small><strong>{{ c.n }}</strong>
       {% if c.tasa is not none %}<small class="muted">{{ c.calificados }} de {{ c.cobrados }} pedidos cobrados ({{ c.tasa|numero(1) }} %)</small>{% endif %}</div>
     <div><small>Con comentario</small><strong>{{ c.comentarios }}</strong></div>
+    <div><small>Buenas (4 y 5 ★)</small><strong>{{ c.buenas }}</strong>
+      <small class="muted">{{ c.a_google }} fueron a Google</small></div>
   </div>
   {% if not c.n %}
   <p class="aviso separado">Todavía no hay calificaciones en este periodo. Al cobrar, Caja muestra un código QR: el cliente lo escanea con su celular y califica de 1 a 5 estrellas la comida y la atención, sin crear cuenta. A los domicilios con teléfono se les puede mandar por WhatsApp.</p>
@@ -290,6 +319,17 @@
     <label class="casilla"><input type="checkbox" name="pedir_al_cobrar"{{ ' checked' if pedir_al_cobrar }} /> Mostrar el QR para calificar después de cobrar</label>
     <button class="btn" type="submit">Guardar</button>
   </form>
+  <h2 class="separado">Reseñas en Google</h2>
+  <p class="muted">Pega el enlace para pedir reseñas de tu ficha de Google (en Google Maps o en tu Perfil de Empresa: <em>Pedir reseñas</em> › copiar enlace).
+    Quien califique con 4 o 5 ★ verá un botón grande para dejar su reseña en Google. Quien califique más bajo ve que su opinión le llegó al dueño{% if google_para_todos %} y solo un enlace pequeño a Google, porque Google no permite pedir reseñas únicamente a los clientes contentos{% endif %}.</p>
+  {% for s in enlaces_google %}
+  <form class="form form--fila google-enlace" data-api="POST {{ url_for('calificaciones.api_google') }}">
+    <input type="hidden" name="id_sede" value="{{ s.id_sede }}" />
+    {% if enlaces_google|length > 1 %}<strong>{{ s.nombre }}</strong>{% endif %}
+    <input name="url" type="url" value="{{ s.url }}" maxlength="300" placeholder="https://g.page/r/…/review" aria-label="Enlace de Google{% if enlaces_google|length > 1 %} de {{ s.nombre }}{% endif %}" />
+    <button class="btn" type="submit">Guardar</button>
+  </form>
+  {% endfor %}
 </section>
 
 {% if c.n %}
@@ -346,7 +386,7 @@
         <input type="hidden" name="pestana" value="calificaciones" />
         <select name="ver" aria-label="Mostrar" class="enviar-al-cambiar">
           <option value="">Todas</option>
-          <option value="bajas"{{ ' selected' if ver == 'bajas' }}>Solo las bajas (1 o 2 ★)</option>
+          <option value="bajas"{{ ' selected' if ver == 'bajas' }}>Solo las bajas (menos de 4 ★)</option>
           <option value="comentarios"{{ ' selected' if ver == 'comentarios' }}>Solo con comentario</option>
         </select>
         <noscript><button class="btn" type="submit">Filtrar</button></noscript>
@@ -358,11 +398,13 @@
     <thead><tr><th>Fecha</th><th>Comida</th><th>Atención</th><th>Comentario</th><th></th></tr></thead>
     <tbody>
     {% for x in calificaciones %}
-      <tr class="{{ 'fila--anulada' if not x.activa else ('fila--alerta' if x.comida <= 2 or x.atencion <= 2) }}">
+      <tr class="{{ 'fila--anulada' if not x.activa else ('fila--alerta' if not x.buena and not x.atendida) }}">
         <td data-th="Fecha">{{ x.fecha }}<br><small class="muted">{{ x.lugar }}{% if x.mesero %} · {{ x.mesero }}{% endif %}{% if sedes|length > 1 %} · {{ x.sede }}{% endif %}</small></td>
         <td data-th="Comida"><span class="estrellas-fijas" aria-label="{{ x.comida }} de 5">{{ '★' * x.comida }}<span>{{ '★' * (5 - x.comida) }}</span></span></td>
         <td data-th="Atención"><span class="estrellas-fijas" aria-label="{{ x.atencion }} de 5">{{ '★' * x.atencion }}<span>{{ '★' * (5 - x.atencion) }}</span></span></td>
         <td data-th="Comentario">{% if x.comentario %}“{{ x.comentario }}”{% else %}<span class="muted">—</span>{% endif %}
+          {% if x.a_google %}<br><span class="chip">Fue a Google</span>{% endif %}
+          {% if x.atendida %}<br><span class="chip">Atendida</span>{% if x.nota_atendida %} <small class="muted">{{ x.nota_atendida }}</small>{% endif %}{% endif %}
           {% if not x.activa %}<br><span class="chip chip--anulado">Oculta</span> <small class="muted">{{ x.motivo_oculta }}</small>{% endif %}</td>
         <td class="acciones">
           {% if x.activa %}
